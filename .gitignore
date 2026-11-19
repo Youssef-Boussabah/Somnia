@@ -1,0 +1,49 @@
+# --- Credentials and local configuration (never commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials*.json
+.claude/settings.local.json
+
+# --- Local databases and runtime state ---
+var/
+*.sqlite
+*.sqlite3
+*.db
+pgdata/
+*.dump
+*.backup
+
+# --- Runtime traces, artifacts and logs ---
+traces/
+runs/
+logs/
+*.log
+
+# --- Sealed / final evaluation material must never live in this checkout ---
+sealed/
+final_eval/
+evals/sealed/
+evals/final/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+.coverage
+htmlcov/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
