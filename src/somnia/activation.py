@@ -14,14 +14,20 @@ from .errors import (IdempotencyConflict, IneligibleCandidate, ProjectMismatch, 
 from .skills import load_candidate, set_members, skill_set_content_hash
 
 
-def _replay(conn: psycopg.Connection, idempotency_key: str, *, project_id: UUID, gate_decision_id: UUID | None,
-            target_set_id: UUID | None = None) -> ActivationResult | None:
+def _replay(conn: psycopg.Connection, idempotency_key: str, *, kind: str, project_id: UUID,
+            gate_decision_id: UUID | None, target_set_id: UUID | None = None) -> ActivationResult | None:
+    """Return the original receipt if ``idempotency_key`` was already used for the SAME operation:
+    same kind ('activate' or 'rollback'), same project, and the same gate decision (activate) or
+    target set (rollback). Any other reuse of the key is an IdempotencyConflict."""
     a = conn.execute(
-        "SELECT a.id, a.project_id, a.gate_decision_id, a.previous_set_id, a.new_set_id, s.version FROM activations a"
-        " JOIN skill_sets s ON s.id = a.new_set_id WHERE a.idempotency_key = %s", (idempotency_key,),
+        "SELECT a.id, a.kind, a.project_id, a.gate_decision_id, a.previous_set_id, a.new_set_id, s.version"
+        " FROM activations a JOIN skill_sets s ON s.id = a.new_set_id WHERE a.idempotency_key = %s",
+        (idempotency_key,),
     ).fetchone()
     if a is None:
         return None
+    if a["kind"] != kind:
+        raise IdempotencyConflict(f"key {idempotency_key!r} was used for a {a['kind']!r} operation, not {kind!r}")
     if a["project_id"] != project_id:
         raise IdempotencyConflict(f"activation key {idempotency_key!r} was used in a different project")
     if gate_decision_id is not None and a["gate_decision_id"] != gate_decision_id:
@@ -82,7 +88,8 @@ def activate_candidate(conn: psycopg.Connection, *, project_id: UUID, gate_decis
                 raise LookupError(f"unknown project {project_id}")
             # Re-check idempotency only after taking the pointer lock, so a concurrent identical
             # request that just committed is seen as a replay rather than a stale conflict.
-            replay = _replay(conn, idempotency_key, project_id=project_id, gate_decision_id=gate_decision_id)
+            replay = _replay(conn, idempotency_key, kind="activate", project_id=project_id,
+                             gate_decision_id=gate_decision_id)
             if replay is not None:
                 return replay
             current = ptr["skill_set_id"]
@@ -174,7 +181,7 @@ def rollback_to(conn: psycopg.Connection, *, project_id: UUID, target_set_id: UU
                            (project_id,)).fetchone()
         if ptr is None:
             raise LookupError(f"unknown project {project_id}")
-        replay = _replay(conn, idempotency_key, project_id=project_id, gate_decision_id=None,
+        replay = _replay(conn, idempotency_key, kind="rollback", project_id=project_id, gate_decision_id=None,
                          target_set_id=target_set_id)
         if replay is not None:
             return replay

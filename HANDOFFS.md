@@ -44,4 +44,13 @@ Classify findings by impact and give reproducible evidence. Fix authorized scope
 ## Handoff report format
 Objective and scope; repository/commit; files changed; contract changes; actual commands/checks and outcomes; scientific findings (if any); costs/reservations; unresolved issues; next gate.
 
+## Standing handoff rule for Claude assignments (D043)
+Every Claude assignment ends with **both**:
+1. a written report in the format above;
+2. a review ZIP.
+
+Both go outside the repository, side by side. The ZIP holds the reviewable working tree, including new and uncommitted files, so `git archive HEAD` alone is not enough. It excludes `.git`, `.env`, credentials, caches, database files, runtime artifacts, sealed material and other ZIPs. Check the archive contents (edited source and new tests) before handing over.
+
+The user alone stages, commits and pushes. Claude leaves all edits unstaged (D041).
+
 The user can authorize independent work in parallel, but role definitions alone do not launch agents or guarantee isolation.

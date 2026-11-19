@@ -104,3 +104,31 @@ Failures, exclusions and negative results:
 Measured cost and unresolved liability: CAD 0 experimental spend. No CAD envelopes. 0 outstanding reservations.
 Interpretation: infrastructure correctness under mocks only; nothing here measures learning.
 Next action: Codex re-review of the repairs; the user commits and pushes.
+
+## 2026-11-19 — Repair after review of `b87707c`: replay bound to operation kind
+Type: engineering. **Not an experiment; no research result.** Author: Claude Code.
+Base: `b87707c` on `foundation`, clean working tree, no stash. The repair is uncommitted (D041).
+Finding: a rollback could replay an activation's idempotency key.
+
+What actually ran:
+- New regression test `test_rollback_cannot_replay_an_activation_key` (real PostgreSQL, public functions only):
+  1. activate v1 with key K;
+  2. advance to v2 through a revision sleep run;
+  3. call `rollback_to(target=v1, key=K)`.
+- **Before the fix:** `Failed: DID NOT RAISE IdempotencyConflict`. A scratch probe outside the repository repeated the same steps and recorded the return value:
+  - `applied=False`;
+  - `activation_id` = the v1 activation;
+  - `new_set_version=1`;
+  - pointer still v2;
+  - 0 new activation rows.
+
+  The caller received a false "already rolled back" receipt.
+- **Second new test**, `test_rollback_retry_returns_original_receipt_and_activation_cannot_reuse_its_key`. Before the fix:
+  - the genuine-retry assertions passed;
+  - the reverse reuse raised `IdempotencyConflict` only through the gate-decision check, so the kind-specific match failed.
+- A first draft of both tests used the fixed key `"K"`. The second test then failed with "used in a different project", because keys are globally unique and pytest shares one database per session. Both tests now use per-test unique keys.
+- **Fix:** `_replay` takes `kind` and raises `IdempotencyConflict` when the stored operation kind differs.
+- **After the fix:** both new tests pass. `uv run pytest` gave **59 passed, 0 failed, 0 skipped** (31.7 s).
+
+Measured cost: CAD 0. No reservations.
+Next action: Codex review of D042; the user commits and pushes.

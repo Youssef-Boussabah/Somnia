@@ -1,10 +1,10 @@
 # Somnia — current status
-As of 19 November 2026 · Foundation (Assignment A) implemented and repaired after review, mock-only · branch `foundation`
+As of 19 November 2026 · Foundation (Assignment A) implemented and repaired after two reviews, mock-only · branch `foundation`
 
 ## Completed
-**Documentation baseline v0.1** (unchanged import is commit `1d195a6`).
+**Documentation baseline v0.1** (unchanged import, now commit `63d608c`).
 
-**Assignment A foundation: working infrastructure, exercised only with mocks.** Commits `e641d62`, `6704a22` and `4841892` on the local branch `foundation`:
+**Assignment A foundation: working infrastructure, exercised only with mocks.** Commits `d1a66f8`, `32bb93b`, `44d64be` and `b87707c` on the local branch `foundation`. The user re-created the history; earlier records cite the old hashes `1d195a6`, `e641d62`, `6704a22` and `4841892` for the first four commits:
 - Local Git repository; remote `origin` = https://github.com/Youssef-Boussabah/Somnia, **not pushed**. Pushing is deferred to the review step and is done by the user.
 - Reproducible environment: CPython 3.13.14 (uv-managed), psycopg 3.3.9, pydantic 2.14.3, pytest 9.2.0 and jsonschema 4.26.0 (dev), locked in `uv.lock`. PostgreSQL 17.12 + pgvector 0.8.7 via `docker-compose.yml`, pinned by tag and digest and bound to 127.0.0.1:5433.
 - Migration 0001 (learner-side store). The database enforces:
@@ -17,7 +17,7 @@ As of 19 November 2026 · Foundation (Assignment A) implemented and repaired aft
 - Transactional budget reservations (`MOCK_MICRO` units, which are not money); fenced stage leases; resume; uncertain-billing hold; idempotent, audited activation; rollback; provenance trace; CLI.
 - Public contracts for the evaluator in `contracts/` (JSON Schemas plus a README).
 
-**Review repairs (19 Nov 2026), uncommitted in the working tree for the user to review and commit:**
+**Review repairs (19 Nov 2026), committed by the user as `b87707c`:**
 1. Activation after rollback allocates a fresh set version under the project lock; the predecessor is the set that was actually active (D033).
 2. Experience citations name the session (`s<n>/<key>`, `consolidate.v2`), so key reuse across sessions in one snapshot cannot misattribute evidence (D034).
 3. Promotion requires the candidate, gate baseline and project to agree, and the active set to be exactly the validated baseline. A second candidate that passed against the same baseline is recorded as `stale_validation` and needs fresh validation (D032).
@@ -26,6 +26,12 @@ As of 19 November 2026 · Foundation (Assignment A) implemented and repaired aft
 6. `GateVerdict` rejects mock+independent in the model and the JSON Schema; the DB CHECK is kept (D037).
 - Plus migration `0002_activation_invariants`, which adds DB triggers for the same rules (D038). The development database was upgraded to 0002 when `somnia demo` ran.
 
+**Repair after review of `b87707c` (19 Nov 2026), uncommitted in the working tree:**
+- Activation/rollback idempotency replay is bound to the operation kind (D042).
+- Before the fix, a rollback that reused an activation's key K, targeting that activation's set, returned the activation's old receipt: `applied=False`, set v1. Meanwhile v2 stayed active and no rollback was recorded.
+- It now raises `IdempotencyConflict`. A genuine rollback retry (same key, same target) still returns the original rollback receipt.
+- Handoff rule (D043): every Claude assignment ends with a written report and a review ZIP built outside the repository.
+
 ## What is mock (not evidence of anything)
 - Model responses, scenario validity checks, rehearsal outcomes, gate verdicts and paired scores are all scripted from labelled synthetic fixtures (`fixtures/development/`).
 - No model was called and no generated code was executed.
@@ -33,7 +39,10 @@ As of 19 November 2026 · Foundation (Assignment A) implemented and repaired aft
 - The mock gate is **not** independent validation. Skill sets activated through it carry `contains_mock_validation = true`, and the export verifier reports this as a scientific-use blocker.
 
 ## Checks (actual, 19 Nov 2026)
-- `uv run pytest`: **57 passed, 0 failed, 0 skipped**. The suite runs against a fresh real PostgreSQL + pgvector database per session.
+- After the `b87707c` repair, `uv run pytest` gave **59 passed, 0 failed, 0 skipped**, against a fresh real PostgreSQL + pgvector database per session.
+  - Of the 2 new tests, the rollback-reusing-an-activation-key test was run first against the unfixed code: **DID NOT RAISE IdempotencyConflict**.
+  - The rollback-retry test also failed before the fix, but only on its final assertion. The reverse reuse (an activation with a rollback's key) was already rejected, though only incidentally, as "used for a different gate decision", not because of the kind.
+- Earlier repairs (`b87707c`): `uv run pytest` gave 57 passed, 0 failed, 0 skipped.
 - The 12 new regression tests for findings 1, 2, 3, 5 and 6 were run against the unrepaired code first, and all 12 failed.
   - 8 failed on the defect itself: the unique-version collision; both candidates activated; cross-project activation accepted; evidence attributed to the wrong session; archived status `running`; and the model and schema accepting mock+independent.
   - 4 citation tests failed only because the old code had no `consolidate.v2` response.
@@ -71,7 +80,7 @@ Experimental model spending: **CAD 0**. No CAD envelopes exist. Outstanding rese
 | Task sandbox not implemented | Executing generated code |
 
 ## Next gate
-**Re-review of the repairs** (Codex, Assignment D), then the user commits and pushes `foundation` to the public remote. In parallel, and only if authorized: Assignment B evaluation-contract work against `contracts/`. Paid work still requires the BUDGET.md preflight.
+**Re-review of the D042 repair** (Codex, Assignment D), then the user commits and pushes `foundation` to the public remote. In parallel, and only if authorized: Assignment B evaluation-contract work against `contracts/`. Paid work still requires the BUDGET.md preflight.
 
 ## Housekeeping
 - `SHA256SUMS.txt` is the v0.1 documentation-delivery manifest and no longer matches the updated records; Git history is now the source of truth.

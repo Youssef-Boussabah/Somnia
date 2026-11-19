@@ -13,8 +13,13 @@ Working with the code (details in STATUS.md):
 - Contracts: after changing `src/somnia/contracts.py`, run `uv run somnia contracts export` and record
   the contract change in DECISIONS.md.
 
-Git: do not stage, commit or push; the user does. Leave changes unstaged and suggest a commit message
+Git: do not stage, commit or push; the user alone does. Leave changes unstaged and suggest a commit message
 without co-author attribution (AGENTS.md).
+
+Handoff (standing rule, D043): every assignment ends with BOTH a written report and a review ZIP, placed
+side by side outside the repository. The ZIP packages the reviewable working tree, including new and
+uncommitted files, and excludes .git, .env, credentials, caches, database files, runtime artifacts, sealed
+material and other ZIPs. Before handing over, check that the ZIP contains the edited source and the new tests.
 
 Hard boundaries: no paid calls without the BUDGET.md preflight; never create or read sealed evaluation
 material in this checkout; never write learned skills into the user's real agent configuration;

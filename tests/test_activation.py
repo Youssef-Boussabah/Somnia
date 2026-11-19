@@ -274,3 +274,64 @@ def test_cross_project_activation_is_rejected_and_pointers_unchanged(conn, artif
                            expected_previous_set_id=before[other]["skill_set_id"], actor="t",
                            idempotency_key="legit", reason="t", allow_mock_validation=True)
     assert _pointer(conn, pid)["skill_set_id"] == ok.new_set_id and _pointer(conn, other) == before[other]
+
+
+# ---------------------------------------------------------------- review of b87707c: replay bound to operation kind
+def _activate_v1_with_key_then_advance_to_v2(conn, artifacts, project, key):
+    pid = project["id"]
+    run1 = make_run(conn, pid, config=load_config(activation__auto_activate=False))
+    assert SleepWorker(conn, artifacts, worker_id="w1").work(run1["run_id"]).status == "completed"
+    v0 = _sets(conn, pid)[0]
+    act_v1 = activate_candidate(conn, project_id=pid, gate_decision_id=_passing_gate(conn, run1["run_id"]),
+                                expected_previous_set_id=v0["id"], actor="t", idempotency_key=key, reason="t",
+                                allow_mock_validation=True)
+    assert act_v1.applied and act_v1.new_set_version == 1
+    snap2 = create_snapshot(conn, pid, [run1["session_id"]]).snapshot_id  # base set is v1
+    run2 = make_run(conn, pid, snapshot_id=snap2, config=load_config(mock_script="indexer_checkpoint_revision_v1"))
+    assert SleepWorker(conn, artifacts, worker_id="w2").work(run2["run_id"]).status == "completed"
+    v2 = _pointer(conn, pid)["skill_set_id"]
+    assert [s["version"] for s in _sets(conn, pid)] == [0, 1, 2] and v2 == _sets(conn, pid)[2]["id"]
+    return act_v1, v2
+
+
+def test_rollback_cannot_replay_an_activation_key(conn, artifacts, project):
+    pid = project["id"]
+    k = f"K-{uuid.uuid4().hex}"
+    act_v1, v2 = _activate_v1_with_key_then_advance_to_v2(conn, artifacts, project, key=k)
+    before = _pointer(conn, pid)
+    n_acts = _n(conn, "SELECT count(*) AS n FROM activations WHERE project_id = %s", pid)
+
+    # Same key, and the target equals the activation's new set: still a different operation.
+    with pytest.raises(IdempotencyConflict, match="activate"):
+        rollback_to(conn, project_id=pid, target_set_id=act_v1.new_set_id, expected_current_set_id=v2, actor="t",
+                    idempotency_key=k, reason="rollback reusing an activation key")
+    assert _pointer(conn, pid) == before and before["skill_set_id"] == v2
+    assert _n(conn, "SELECT count(*) AS n FROM activations WHERE project_id = %s", pid) == n_acts
+
+
+def test_rollback_retry_returns_original_receipt_and_activation_cannot_reuse_its_key(conn, artifacts, project):
+    pid = project["id"]
+    k = f"K-{uuid.uuid4().hex}"
+    act_v1, v2 = _activate_v1_with_key_then_advance_to_v2(conn, artifacts, project, key=k)
+    rb = f"RB-{uuid.uuid4().hex}"
+    first = rollback_to(conn, project_id=pid, target_set_id=act_v1.new_set_id, expected_current_set_id=v2,
+                        actor="t", idempotency_key=rb, reason="genuine rollback")
+    assert first.applied and _pointer(conn, pid)["skill_set_id"] == act_v1.new_set_id
+    # A retry (same key, same target) returns the original rollback receipt, even with a stale expected set.
+    retry = rollback_to(conn, project_id=pid, target_set_id=act_v1.new_set_id, expected_current_set_id=v2,
+                        actor="t", idempotency_key=rb, reason="retry")
+    assert not retry.applied
+    assert (retry.activation_id, retry.previous_set_id, retry.new_set_id, retry.new_set_version) == (
+        first.activation_id, first.previous_set_id, first.new_set_id, first.new_set_version)
+    assert _n(conn, "SELECT count(*) AS n FROM activations WHERE idempotency_key = %s", rb) == 1
+    # The rollback's key cannot be replayed as an activation either.
+    with pytest.raises(IdempotencyConflict, match="rollback"):
+        activate_candidate(conn, project_id=pid, gate_decision_id=_passing_gate(conn, _run_of(conn, act_v1)),
+                           expected_previous_set_id=act_v1.new_set_id, actor="t", idempotency_key=rb,
+                           reason="t", allow_mock_validation=True)
+    assert _pointer(conn, pid)["skill_set_id"] == act_v1.new_set_id
+
+
+def _run_of(conn, act):
+    return conn.execute("SELECT g.run_id FROM activations a JOIN gate_decisions g ON g.id = a.gate_decision_id"
+                        " WHERE a.id = %s", (act.activation_id,)).fetchone()["run_id"]
