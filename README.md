@@ -1,5 +1,5 @@
 # Somnia — project documentation
-Version 0.1 · 18 November 2026 · Documentation baseline; implementation not started.
+Version 0.1 · 18 November 2026 · Foundation implemented (mock-only); no research results. See [STATUS.md](STATUS.md).
 
 Somnia investigates whether an agent can use downtime to discover weaknesses, run controlled experiments, and retain skills that improve later work. The base model stays frozen. Improvement must be demonstrated on tasks the learning system has never seen.
 
@@ -8,6 +8,17 @@ Somnia investigates whether an agent can use downtime to discover weaknesses, ru
 2. Read [PROJECT.md](PROJECT.md) for scope and [EXPERIMENTS.md](EXPERIMENTS.md) for what would count as evidence.
 3. Use [AGENTS.md](AGENTS.md) and [HANDOFFS.md](HANDOFFS.md) when assigning engineering work.
 4. Check [STATUS.md](STATUS.md) before acting. A plan is not a completed implementation.
+
+## Developer quickstart (mock mode)
+```
+uv sync                                   # Python 3.13 + locked dependencies
+cp .env.example .env                      # then set a local-only password
+docker compose up -d --wait               # PostgreSQL 17 + pgvector 0.8.7 on localhost:5433
+uv run somnia db migrate
+uv run somnia demo                        # full mock cycle + report + fresh-session retrieval
+uv run pytest                             # checks against a fresh real PostgreSQL database
+```
+Everything the demo produces is driven by synthetic fixtures and mock components. Public contracts for the evaluator are in [contracts/](contracts/README.md).
 
 ## Document map
 | File | Owns |

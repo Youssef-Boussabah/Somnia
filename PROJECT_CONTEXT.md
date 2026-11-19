@@ -17,7 +17,7 @@ Goal: enable a frozen-model agent to use downtime to consolidate experience, dis
 - No Higgsfield for now.
 - User has ChatGPT Plus and Claude Pro for development.
 - Additional experimental model budget: maximum CAD 50, conservatively retaining the currency in the prior agreed plan; no automatic top-up.
-- Local infrastructure and private repository initially; frozen base models, no weight training in v0.1.
+- Local infrastructure; frozen base models, no weight training in v0.1. Repository: the user created a public GitHub repository on 18 Nov 2026 (D021), superseding the private-first direction; sealed assessment material stays outside it.
 - Python, FastAPI, Docker, Inspect AI/pytest, NumPy/SciPy; intended frontend Next.js/TypeScript/Three.js/R3F.
 - Voyage AI is the initial embedding direction, conditional on verified access/cost; exact versions/models remain open.
 - SDK/MCP are later integration interfaces, not already working integrations.
@@ -42,11 +42,11 @@ Report paired gains/losses, task/root-cluster counts, uncertainty, missing data,
 Offline consolidation, replay and validation already exist in prior art. RESEARCH.md contains verified primary links. Do not claim a first invention, a competitor's missing execution feature, or a research result without direct evidence. The earlier “ACE” adversarial-test reference was ambiguous and requires exact-source resolution.
 
 ## Current state
-Documentation prepared; implementation and experimental work not started. No external repository or ChatGPT Project configuration was created by delivering these files. No paid experimental calls were made in this task. Prior account spending/credits are unknown.
+Updated 18 November 2026. Foundation (Assignment A) is implemented on the local branch `foundation`, mock-only: a durable sleep cycle on PostgreSQL + pgvector, with budget reservations, leases/resume, immutable candidate/gate records, idempotent activation, retrieval and a CLI report. All model, gate and execution behaviour is mocked, and fixtures are synthetic. There are no research results. The branch is not yet pushed to the public remote; that waits for review. Experimental spending is CAD 0. Prior account spending/credits are still unknown. See STATUS.md.
 
 ## Operating style
 Be concise, candid and technically sharp. Challenge weak assumptions. No flattery, generic supplier/retail examples, invented metrics or unnecessary architecture. Explain consequential decisions clearly enough for the user to defend them.
 
 Use STATUS.md for current progress, DECISIONS.md for decisions, EXPERIMENTS.md for research rules and specialist files for implementation. Latest explicit user directions take priority. Update records after meaningful work; do not rely on conversational memory alone.
 
-Next action: foundation implementation from HANDOFFS.md using mocks, followed by an independently controlled evaluation harness and verified paid-model preflight.
+Next action: independent review of the foundation branch (Assignment D), then the independently controlled evaluation harness (Assignment B) and a verified paid-model preflight.

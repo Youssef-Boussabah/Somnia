@@ -39,6 +39,7 @@ Version 0.1 · Consolidated 18 November 2026
 - +5–10 pp, 90% recall, 5% regression and 100+ tasks as guaranteed outcomes: aspirations only.
 - Earlier Day 1/completion indicators: planning text, not evidence implementation occurred.
 - December 1 deadline: historical estimate based on a prior assumed start; use working-day schedule.
+- Private repository initially (D009): superseded 2026-11-18 by the user's public GitHub repository (D021); sealed material remains outside it.
 
 ## Open decisions with resolution rule
 | Question | Owner | Resolve by |
@@ -52,3 +53,18 @@ Version 0.1 · Consolidated 18 November 2026
 | Additional model/domain studies | User + coordinator | Evidence and remaining budget, never implicit extra spend |
 
 Append entries with date, decision, evidence, alternatives, tradeoff and affected files. Changing an open proposal does not require ceremonial approval if it is routine and within authorized scope; changing explicit user constraints does.
+
+## 2026-11-18 — Foundation implementation entries (Claude Code)
+| ID | Status | Decision | Reason / consequence |
+|---|---|---|---|
+| D021 | Accepted (user) | The user created a **public** GitHub repository, https://github.com/Youssef-Boussabah/Somnia. This supersedes the "private repository initially" part of D009. | Code and project records may be published. Sealed assessment tasks, oracles, credentials and runtime traces stay outside this repository (`.gitignore` also excludes `sealed/`, `final_eval/`, `var/`, `.env`). Pushing is deferred to the Assignment D review. License/public-release terms remain the user's open decision. |
+| D022 | Implemented | Python 3.13.14 (uv-managed), psycopg 3.3.9, pydantic 2.14.3, pytest 9.2.0; exact versions in `uv.lock`. FastAPI, NumPy/SciPy and Inspect are deferred until a component needs them. | Resolves the dependency question for the foundation scope only (D011 direction unchanged). |
+| D023 | Implemented | PostgreSQL 17.12 + pgvector 0.8.7, image `pgvector/pgvector:0.8.7-pg17` pinned by digest `sha256:b513c485…bd8fd`, on localhost:5433. | Versions verified inside the image. Port 5432 was already in use on the host. |
+| D024 | Implemented | Integrity rules live in the database: immutability triggers; budget counters maintained by triggers with guarded updates; allowed reservation transitions; gate/candidate hash match; `NOT (is_mock AND independent)`; development-only learning snapshots; no `final` partition value. | A bug in application code cannot bypass them. A superuser can still disable triggers, and hash-chain verification detects such edits. |
+| D025 | Implemented | Two non-mixing ledger units: `CAD_MICRO` (money) and `MOCK_MICRO` (fake units). Mock providers only accept mock envelopes, and real providers would only accept CAD. | Lets mocks exercise the real reservation path without polluting real spend accounting. |
+| D026 | Implemented | One expiring lease per run, using the DB clock and a monotonic fencing token. Each stage's outputs, attempt record and pointer move commit in one fenced transaction. Side-effecting calls (reservations, activation) re-check the lease in their own transaction and are idempotent by key. | At-least-once execution with idempotent writes (ARCHITECTURE.md), not exactly-once. |
+| D027 | Implemented | `uncertain → released` is impossible. An uncertain reservation is resolved only by `reconcile` with an actual cost (possibly 0) and a note. A new worker marks a predecessor's held reservations uncertain, and any uncertain reservation blocks the run. Completed calls are reused by request key instead of being re-sent. | Implements BUDGET.md: never release funds just because no response arrived. |
+| D028 | Implemented | Activation happens under a lock on the active-set pointer and requires: a gate `pass` on the re-verified content hash, the expected previous set, and the candidate's parent being the skill's active version. An idempotency key makes replays return the original result. Mock-gated activation needs `allow_mock_gate_activation` and marks the set `contains_mock_validation`. Rejections are audited. | Stale or duplicate promotion is impossible. Mock-validated sets are distinguishable by evaluators. |
+| D029 | Implemented | Schema versioning uses forward-only SQL migrations with checksum verification, through a small custom runner rather than Alembic, since there is no ORM. A per-row `schema_version` exists only where JSONB payloads evolve (events, run config). Public contracts are versioned as JSON Schemas in `contracts/v1`. | Small, explicit and testable. Revisit if migrations become complex. |
+| D030 | Implemented (provisional) | Retrieval v0 applies a domain/required-tags/exclusion-tags predicate, then exact cosine distance over a **mock, non-semantic** feature-hash embedding (`mock-hash-v1`, 64 dims), then packs into the skill-count and token ceilings. | A real embedding spec remains open (D013). Ranking quality is untested and meaningless with the mock embedding. |
+| D031 | Proposed | The reference agent interface is not yet defined. Assignment A delivered the gate/retrieval/skill-set/execution contracts only. | It must be agreed jointly with the evaluator (HANDOFFS.md) rather than imposed by the learner side. |
