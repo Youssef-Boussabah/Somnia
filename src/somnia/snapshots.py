@@ -56,9 +56,24 @@ def create_snapshot(conn: psycopg.Connection, project_id: UUID, session_ids: lis
                         event_count=len(events), created=created)
 
 
+def event_ref(session_ordinal: int, idempotency_key: str) -> str:
+    """Snapshot-local, unambiguous event reference used in model prompts, e.g. ``s2/evt-002``.
+
+    Idempotency keys are unique only within a session, so a key alone can name several events of a
+    multi-session snapshot. ``session_ordinal`` is the 1-based position of the event's session in
+    the snapshot's fixed order (session created_at, then id). The prefix up to the first ``/`` is
+    ``s`` + digits, so distinct (session, key) pairs always give distinct refs. A ref means nothing
+    outside its snapshot; persisted evidence stores the resolved event id, never the ref."""
+    return f"s{session_ordinal}/{idempotency_key}"
+
+
 def snapshot_events(conn: psycopg.Connection, snapshot_id: UUID) -> list[dict]:
-    return conn.execute(
-        "SELECT e.id, e.idempotency_key, e.seq, e.event_type, e.payload, e.event_hash, e.origin"
+    rows = conn.execute(
+        "SELECT e.id, e.session_id, e.idempotency_key, e.seq, e.event_type, e.payload, e.event_hash, e.origin,"
+        " dense_rank() OVER (ORDER BY s.created_at, s.id) AS session_ordinal"
         " FROM snapshot_events se JOIN events e ON e.id = se.event_id JOIN sessions s ON s.id = e.session_id"
         " WHERE se.snapshot_id = %s ORDER BY s.created_at, s.id, e.seq", (snapshot_id,),
     ).fetchall()
+    for r in rows:
+        r["ref"] = event_ref(r["session_ordinal"], r["idempotency_key"])
+    return rows

@@ -123,13 +123,21 @@
     },
     "SkillSetExport": {
       "additionalProperties": false,
-      "description": "Frozen skill-set view an evaluator consumes. Verify ``content_hash`` before use.",
+      "description": "Frozen skill-set view an evaluator consumes (v2). Verify it with\n``somnia.export_verify.verify_skill_set_export(json, trusted_digest)``: the export digest is\nSHA-256 over the canonical JSON of the whole document and must come from a trusted channel,\nnever from the document itself. See contracts/README.md.",
       "properties": {
+        "canonicalization": {
+          "const": "somnia-cjson-v1",
+          "default": "somnia-cjson-v1",
+          "title": "Canonicalization",
+          "type": "string"
+        },
         "contains_mock_validation": {
+          "description": "True iff any member's gate_is_mock is true",
           "title": "Contains Mock Validation",
           "type": "boolean"
         },
         "content_hash": {
+          "description": "sha256(canonical_json({members: [{skill_id, skill_version_id, gate_decision_id}] sorted by skill_id}))",
           "title": "Content Hash",
           "type": "string"
         },
@@ -158,8 +166,8 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 1,
-          "default": 1,
+          "const": 2,
+          "default": 2,
           "title": "Schema Version",
           "type": "integer"
         },
@@ -192,6 +200,7 @@
           "$ref": "#/$defs/SkillBody"
         },
         "content_hash": {
+          "description": "sha256(canonical_json({body, parent_version_id}))",
           "title": "Content Hash",
           "type": "string"
         },
@@ -207,6 +216,23 @@
         "gate_is_mock": {
           "title": "Gate Is Mock",
           "type": "boolean"
+        },
+        "parent_version_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Parent Version Id"
+        },
+        "skill_id": {
+          "format": "uuid",
+          "title": "Skill Id",
+          "type": "string"
         },
         "skill_slug": {
           "title": "Skill Slug",
@@ -228,8 +254,10 @@
       },
       "required": [
         "skill_slug",
+        "skill_id",
         "skill_version_id",
         "version",
+        "parent_version_id",
         "content_hash",
         "gate_decision_id",
         "gate_is_mock",
@@ -242,7 +270,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "What a validator receives. It never includes hidden oracles or sealed-task content.",
+  "description": "What a validator receives. It never includes hidden oracles or sealed-task content.\nv2: ``baseline_skill_set`` is a SkillSetExport v2.",
   "properties": {
     "baseline_skill_set": {
       "$ref": "#/$defs/SkillSetExport"
@@ -251,8 +279,8 @@
       "$ref": "#/$defs/CandidateSkill"
     },
     "schema_version": {
-      "const": 1,
-      "default": 1,
+      "const": 2,
+      "default": 2,
       "title": "Schema Version",
       "type": "integer"
     },

@@ -4,6 +4,10 @@ Order of operations (MEMORY.md): project/skill-set filter -> applicability/exclu
 rank (exact vector distance, deterministic tie-break by version id) -> pack into the skill-count
 and token ceilings. Every call is logged with eligible/selected/excluded version ids.
 With the mock embedding spec, ranking is deterministic but NOT semantic.
+
+DEVELOPMENT / VALIDATION ONLY: every request, including the full task query, is written to the
+learner-side ``retrieval_logs`` table. Sealed final-task retrieval must run on the evaluator side
+against a verified frozen SkillSetExport, never through this path (DECISIONS.md D039).
 """
 
 from __future__ import annotations

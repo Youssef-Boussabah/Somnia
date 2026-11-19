@@ -3,13 +3,13 @@
   "synthetic": true,
   "script_id": "indexer_checkpoint_revision_v1",
   "responses": {
-    "consolidate.v1": {
+    "consolidate.v2": {
       "hypotheses": [
         {
           "claim": "Flushing the output file is not sufficient if the write itself can be torn by a crash; a partially written record can corrupt the index.",
           "mechanism": "A crash during a non-atomic write leaves a truncated final line.",
           "falsifier": "If crashes injected during the write never leave a truncated record, the hypothesis is false.",
-          "source_event_keys": ["evt-002", "evt-004"]
+          "source_event_refs": ["s1/evt-002", "s1/evt-004"]
         }
       ]
     },

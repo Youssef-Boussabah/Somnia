@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 CONTRACT_VERSION = 1
 
@@ -110,9 +110,11 @@ class CandidateSkill(_Frozen):
 
 class SkillSetMember(_Frozen):
     skill_slug: str
+    skill_id: UUID
     skill_version_id: UUID
     version: int
-    content_hash: str
+    parent_version_id: UUID | None
+    content_hash: str = Field(description="sha256(canonical_json({body, parent_version_id}))")
     gate_decision_id: UUID
     gate_is_mock: bool
     gate_independent: bool
@@ -121,16 +123,29 @@ class SkillSetMember(_Frozen):
 
 
 class SkillSetExport(_Frozen):
-    """Frozen skill-set view an evaluator consumes. Verify ``content_hash`` before use."""
+    """Frozen skill-set view an evaluator consumes (v2). Verify it with
+    ``somnia.export_verify.verify_skill_set_export(json, trusted_digest)``: the export digest is
+    SHA-256 over the canonical JSON of the whole document and must come from a trusted channel,
+    never from the document itself. See contracts/README.md."""
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
+    canonicalization: Literal["somnia-cjson-v1"] = "somnia-cjson-v1"
     skill_set_id: UUID
     project_id: UUID
     version: int
     predecessor_id: UUID | None
-    content_hash: str
-    contains_mock_validation: bool
+    content_hash: str = Field(description="sha256(canonical_json({members: [{skill_id, skill_version_id, "
+                                          "gate_decision_id}] sorted by skill_id}))")
+    contains_mock_validation: bool = Field(description="True iff any member's gate_is_mock is true")
     members: list[SkillSetMember]
+
+    @model_validator(mode="after")
+    def _flags_consistent(self) -> SkillSetExport:
+        if self.contains_mock_validation != any(m.gate_is_mock for m in self.members):
+            raise ValueError("contains_mock_validation must equal any(member.gate_is_mock)")
+        if any(m.gate_is_mock and m.gate_independent for m in self.members):
+            raise ValueError("a mock-gated member cannot be independent")
+        return self
 
 
 # ---------------------------------------------------------------- gate
@@ -144,16 +159,25 @@ class PairedScore(_Frozen):
 
 
 class GateRequest(_Frozen):
-    """What a validator receives. It never includes hidden oracles or sealed-task content."""
+    """What a validator receives. It never includes hidden oracles or sealed-task content.
+    v2: ``baseline_skill_set`` is a SkillSetExport v2."""
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     candidate: CandidateSkill
     baseline_skill_set: SkillSetExport
     suite_id: str
 
 
+_MOCK_AND_INDEPENDENT = {"properties": {"is_mock": {"const": True}, "independent": {"const": True}},
+                         "required": ["is_mock", "independent"]}
+
+
 class GateVerdict(_Frozen):
-    """What a validator returns. ``independent`` must be False for any mock or learner-side gate."""
+    """What a validator returns. ``independent`` must be False for any mock or learner-side gate.
+    A verdict with ``is_mock=true`` and ``independent=true`` is rejected by this model, by the
+    exported JSON Schema (``not`` clause) and by the database CHECK constraint."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", json_schema_extra={"not": _MOCK_AND_INDEPENDENT})
 
     schema_version: Literal[1] = 1
     candidate_hash: str
@@ -167,6 +191,12 @@ class GateVerdict(_Frozen):
     is_mock: bool
     paired_scores: list[PairedScore] = []
     evidence_refs: list[str] = []
+
+    @model_validator(mode="after")
+    def _mock_is_never_independent(self) -> GateVerdict:
+        if self.is_mock and self.independent:
+            raise ValueError("a mock gate verdict cannot claim to be independent (is_mock and independent both true)")
+        return self
 
 
 # ---------------------------------------------------------------- activation

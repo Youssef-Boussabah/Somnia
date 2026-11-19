@@ -28,7 +28,8 @@ from .activation import activate_candidate
 from .artifacts import ArtifactStore
 from .contracts import GateRequest, RunConfig, ScenarioSpec, SkillBody
 from .errors import (BillingUncertain, FixtureError, IdempotencyConflict, IneligibleCandidate, IntegrityFailure,
-                     LeaseLost, LeaseUnavailable, RunBlocked, StaleActivation, StaleParentVersion, translating)
+                     LeaseLost, LeaseUnavailable, RunBlocked, StaleActivation, StaleParentVersion, StaleValidation,
+                     translating)
 from .gateway import CallContext, ModelGateway
 from .hashing import canonical_json, hash_obj, sha256_text
 from .interfaces import GateValidator, ModelProvider, ScenarioExecutor
@@ -107,6 +108,14 @@ class _Ctx:
     attempt_id: UUID
     stage: str
     base_set_id: UUID
+
+
+@dataclass(frozen=True)
+class _Commit:
+    """A stage's commit: ``write`` runs before the attempt/pointer update; ``after_advance`` (optional)
+    runs after it, inside the same fenced transaction, and its result is merged into the output."""
+    write: Callable[[psycopg.Connection], dict]
+    after_advance: Callable[[psycopg.Connection], dict] | None = None
 
 
 class SleepWorker:
@@ -248,17 +257,19 @@ class SleepWorker:
                 " VALUES (%s, %s, %s, %s, 'running', %s) RETURNING id",
                 (run["id"], stage, fence, self.worker_id, input_hash)).fetchone()["id"]
 
-    def _commit_stage(self, ctx: _Ctx, commit_fn: Callable[[psycopg.Connection], dict]) -> None:
+    def _commit_stage(self, ctx: _Ctx, commit: Callable[[psycopg.Connection], dict] | _Commit) -> None:
+        c = commit if isinstance(commit, _Commit) else _Commit(commit)
         run_id = ctx.run["id"]
         with conn_tx(self.conn):
             row = self._assert_lease(self.conn, run_id, ctx.fence, lock="UPDATE")
             if row["current_stage"] != ctx.stage:
                 raise LeaseLost(f"stage pointer moved to {row['current_stage']} while running {ctx.stage}")
-            output = commit_fn(self.conn)
+            output = c.write(self.conn)
             self.conn.execute(
                 "UPDATE stage_attempts SET status = 'succeeded', output = %s, output_hash = %s,"
                 " finished_at = clock_timestamp() WHERE id = %s",
-                (Jsonb(output), hash_obj(output), ctx.attempt_id))
+                (Jsonb(output) if c.after_advance is None else None,
+                 hash_obj(output) if c.after_advance is None else None, ctx.attempt_id))
             nxt = next_stage(ctx.stage)
             moved = self.conn.execute(
                 "UPDATE sleep_runs SET current_stage = %s, status = %s,"
@@ -266,6 +277,12 @@ class SleepWorker:
                 (nxt, "completed" if nxt == DONE else "running", nxt == DONE, run_id, ctx.fence)).rowcount
             if moved != 1:  # defence in depth; _assert_lease above should already have failed
                 raise LeaseLost(f"stage pointer update matched {moved} rows for fence {ctx.fence}")
+            if c.after_advance is not None:
+                # Still inside the same fenced transaction: the step sees the run as it will be once
+                # this commits (attempt succeeded, pointer moved). A crash here commits nothing.
+                output = {**output, **c.after_advance(self.conn)}
+                self.conn.execute("UPDATE stage_attempts SET output = %s, output_hash = %s WHERE id = %s",
+                                  (Jsonb(output), hash_obj(output), ctx.attempt_id))
 
     def _block(self, run_id: UUID, fence: int, attempt_id: UUID | None, reason: str) -> None:
         with conn_tx(self.conn):
@@ -296,20 +313,26 @@ class SleepWorker:
 
     # ------------------------------------------------------------ stages
     def _stage_consolidate(self, ctx: _Ctx, gw: ModelGateway):
+        # consolidate.v2: events are cited by snapshot-local refs ("s<session>/<key>"), because
+        # idempotency keys repeat across sessions. v1 cited bare keys and could misattribute evidence.
         events = snapshot_events(self.conn, ctx.run["snapshot_id"])
-        by_key = {e["idempotency_key"]: e["id"] for e in events}
-        prompt = "TEMPLATE consolidate.v1\n" + canonical_json(
-            [{"key": e["idempotency_key"], "seq": e["seq"], "type": e["event_type"], "payload": e["payload"]}
-             for e in events])
-        res = gw.call(self._call_ctx(ctx), "consolidate.v1", prompt)
+        by_ref = {e["ref"]: e["id"] for e in events}
+        if len(by_ref) != len(events):  # cannot happen given UNIQUE (session_id, idempotency_key)
+            raise IntegrityFailure("snapshot event references are not unique")
+        prompt = "TEMPLATE consolidate.v2\n" + canonical_json(
+            [{"ref": e["ref"], "session": e["session_ordinal"], "seq": e["seq"], "type": e["event_type"],
+              "payload": e["payload"]} for e in events])
+        res = gw.call(self._call_ctx(ctx), "consolidate.v2", prompt)
         hyps_all = json.loads(res.text)["hypotheses"]
         hyps = hyps_all[: ctx.config.limits.max_hypotheses]
         for h in hyps:
-            if not all(h.get(k) for k in ("claim", "mechanism", "falsifier", "source_event_keys")):
-                raise FixtureError("hypothesis lacks claim/mechanism/falsifier/source_event_keys")
-            unknown = [k for k in h["source_event_keys"] if k not in by_key]
+            if "source_event_keys" in h:
+                raise FixtureError("hypothesis cites bare event keys (consolidate.v1); cite source_event_refs")
+            if not all(h.get(k) for k in ("claim", "mechanism", "falsifier", "source_event_refs")):
+                raise FixtureError("hypothesis lacks claim/mechanism/falsifier/source_event_refs")
+            unknown = [k for k in h["source_event_refs"] if k not in by_ref]
             if unknown:
-                raise FixtureError(f"hypothesis cites events outside the snapshot: {unknown}")
+                raise FixtureError(f"hypothesis cites event refs that are not in the snapshot: {unknown}")
 
         def commit(conn: psycopg.Connection) -> dict:
             for i, h in enumerate(hyps, start=1):
@@ -318,9 +341,9 @@ class SleepWorker:
                     " provider_call_id, origin, content_hash) VALUES (%s, %s, %s, %s, %s, %s, %s, 'mock', %s)"
                     " RETURNING id", (ctx.run["id"], ctx.attempt_id, i, h["claim"], h["mechanism"], h["falsifier"],
                                       res.provider_call_id, hash_obj(h))).fetchone()["id"]
-                for k in h["source_event_keys"]:
+                for event_id in {by_ref[k] for k in h["source_event_refs"]}:
                     conn.execute("INSERT INTO hypothesis_sources (hypothesis_id, event_id) VALUES (%s, %s)",
-                                 (hid, by_key[k]))
+                                 (hid, event_id))
             return {"hypotheses": len(hyps), "truncated": len(hyps_all) - len(hyps),
                     "provider_call_id": str(res.provider_call_id), "reused_call": res.reused}
         return commit
@@ -467,21 +490,25 @@ class SleepWorker:
                 "SELECT g.id, s.slug FROM gate_decisions g JOIN skill_versions v ON v.id = g.skill_version_id"
                 " JOIN skills s ON s.id = v.skill_id WHERE g.run_id = %s AND g.decision = 'pass'"
                 " ORDER BY s.slug, v.version", (run_id,)).fetchall()
-            expected = ctx.base_set_id
+            # Every verdict of this run was produced against the run's base set, so each activation
+            # must find exactly that set active. Once one candidate is activated, the others' verdicts
+            # are stale: they are recorded as such and need fresh validation (never chained).
             for g in passing:
                 rec = {"slug": g["slug"], "gate_decision_id": str(g["id"])}
                 try:
                     r = activate_candidate(
                         self.conn, project_id=ctx.run["project_id"], gate_decision_id=g["id"],
-                        expected_previous_set_id=expected, actor=f"sleep_run:{run_id}",
+                        expected_previous_set_id=ctx.base_set_id, actor=f"sleep_run:{run_id}",
                         idempotency_key=f"run:{run_id}:gate:{g['id']}",
                         reason="auto-activation in controlled development condition (mock gate)",
                         allow_mock_validation=ctx.config.gate.allow_mock_gate_activation, run_id=run_id,
                         guard=self._guard(ctx))
-                    expected = r.new_set_id
                     rec |= {"result": "activated" if r.applied else "already_activated",
                             "activation_id": str(r.activation_id), "new_set_id": str(r.new_set_id),
                             "new_set_version": r.new_set_version}
+                except StaleValidation as exc:
+                    rec |= {"result": "stale_validation", "requires": "fresh validation against the active set",
+                            "detail": f"{type(exc).__name__}: {exc}"}
                 except (StaleActivation, StaleParentVersion) as exc:
                     rec |= {"result": "stale_rejected", "detail": f"{type(exc).__name__}: {exc}"}
                 except IneligibleCandidate as exc:
@@ -499,12 +526,15 @@ class SleepWorker:
     def _stage_report(self, ctx: _Ctx, gw: ModelGateway):
         from .report import build_report
 
-        def commit(conn: psycopg.Connection) -> dict:
+        def archive(conn: psycopg.Connection) -> dict:
+            # Runs after the attempt is marked succeeded and the run completed, in the same
+            # transaction, so the archived bytes describe the final state. A report cannot contain
+            # its own artifact hash: inside the archive, the report attempt's output_hash is null.
             report = build_report(conn, ctx.run["id"])
             sha = self.artifacts.put(conn, canonical_json(report).encode("utf-8"), media_type="application/json",
                                      origin="derived")
             return {"report_artifact": sha}
-        return commit
+        return _Commit(write=lambda conn: {}, after_advance=archive)
 
 
 @contextmanager

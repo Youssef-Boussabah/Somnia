@@ -13,6 +13,9 @@ Working with the code (details in STATUS.md):
 - Contracts: after changing `src/somnia/contracts.py`, run `uv run somnia contracts export` and record
   the contract change in DECISIONS.md.
 
+Git: do not stage, commit or push; the user does. Leave changes unstaged and suggest a commit message
+without co-author attribution (AGENTS.md).
+
 Hard boundaries: no paid calls without the BUDGET.md preflight; never create or read sealed evaluation
 material in this checkout; never write learned skills into the user's real agent configuration;
 mock outputs and synthetic fixtures must stay labelled as such. Update STATUS.md and

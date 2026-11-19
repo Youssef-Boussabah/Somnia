@@ -47,6 +47,8 @@ The final dataset is sealed until the evaluation protocol and skills are frozen.
 ## Change and communication policy
 For each assignment, state objective, owned files, contracts, constraints and acceptance criteria. Stop scope expansion when it lacks a measured reason. Document assumptions and unresolved decisions; ask only for information necessary to proceed.
 
+Git: the user handles all staging, commits and pushes. Agents leave their changes unstaged in the working tree and may suggest a commit message, without AI co-author attribution lines. Review archives are built outside the repository from the working tree when it holds uncommitted changes (`git archive HEAD` alone would omit them).
+
 Do authorized reversible work without repeatedly requesting confirmation. Explicit authorization is required before new spending outside the agreed cap, publishing/private-data transmission outside the agreed research boundary, or adopting learned skills into the user's real agents when that adoption has not been authorized.
 
 Update STATUS.md and RESEARCH_JOURNAL.md when meaningful progress occurs. Record decision changes in DECISIONS.md; do not silently rewrite history. Report actual files/commits, checks, findings, costs and remaining issues. Never mark all milestones complete because documentation exists.

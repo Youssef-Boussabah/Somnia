@@ -116,6 +116,33 @@ def test_crash_between_reserve_and_send_blocks_until_reconciled(connect_db, arti
     assert budget.envelope_status(conn, run["envelope_id"])["reserved_micro"] == 0
 
 
+def test_crash_during_report_stage_still_archives_an_accurate_report(connect_db, artifacts, project):
+    import json
+
+    conn = connect_db()
+    run = make_run(conn, project["id"])
+    hook, state = _crash_once("stage.before_commit", stage="report")
+    a = connect_db()
+    with pytest.raises(SimulatedCrash):
+        SleepWorker(a, artifacts, worker_id="A", lease_ttl_s=1, hook=hook).work(run["run_id"])
+    a.close()
+    assert state["fired"]
+    # Nothing of the report stage committed: the run is still at 'report' and no report is referenced.
+    assert conn.execute("SELECT current_stage FROM sleep_runs WHERE id = %s",
+                        (run["run_id"],)).fetchone()["current_stage"] == "report"
+
+    wait_lease_expired(conn, run["run_id"])
+    out = SleepWorker(connect_db(), artifacts, worker_id="B").work(run["run_id"])
+    assert out.status == "completed" and out.stages_run == ["report"]
+    shas = conn.execute("SELECT output->>'report_artifact' AS s FROM stage_attempts WHERE run_id = %s"
+                        " AND stage = 'report' AND status = 'succeeded'", (run["run_id"],)).fetchall()
+    assert len(shas) == 1
+    archived = json.loads(artifacts.get(shas[0]["s"]).decode("utf-8"))
+    assert (archived["status"], archived["current_stage"]) == ("completed", "done")
+    report_stage = next(s for s in archived["stages"] if s["stage"] == "report")
+    assert [(x["worker_id"], x["status"]) for x in report_stage["attempts"]] == [("A", "abandoned"), ("B", "succeeded")]
+
+
 def test_completed_run_rework_is_a_no_op(connect_db, artifacts, project):
     conn = connect_db()
     run = make_run(conn, project["id"])

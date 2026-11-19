@@ -59,3 +59,48 @@ Measured cost and unresolved liability: CAD 0 experimental spend. No CAD envelop
 Interpretation: this demonstrates infrastructure semantics under mocks. It says nothing about whether Somnia learns, and the mock gate is not validation.
 Changes justified by evidence: the two fixes above (trace coverage; fencing test plus row-count guard).
 Next action: Assignment D independent review of `foundation` before pushing; agree the reference agent interface with the evaluator.
+
+## 2026-11-19 — Foundation repairs after review of `4841892`
+Type: engineering. **Not an experiment; no research result.**
+Author: Claude Code (lead engineer session).
+Baseline: `4841892`, clean working tree, no stash. Repairs are uncommitted in the working tree, for the user to review and commit (D041).
+Question: do the six review findings reproduce, and do the repairs remove them without breaking resume, budget or activation semantics?
+
+What actually ran:
+- I wrote the new regression tests first and ran them against the unrepaired code. All 12 tests for findings 1, 2, 3, 5 and 6 failed. 8 failed on the defect itself:
+  1. Rollback to v0, then activation: `UniqueViolation (project_id, version)=(…, 1)`.
+  2. Two passing candidates on the same baseline: both were activated. Separately, a gate decision from project A activated into project B without error.
+  3. Two sessions reusing keys `evt-001`…`evt-005`: both hypotheses' sources resolved to the **second** session's events.
+  4. Archived report bytes: `status: running`, `current_stage: report`. This held for a normal run and after a crash plus resume in the report stage.
+  5. `GateVerdict(is_mock=true, independent=true)` was accepted by the pydantic model and by a Draft 2020-12 validator using the committed schema.
+
+  The other 4 were citation tests written in the new `consolidate.v2` format; they failed on the missing response, not on the defect. The 5 finding-4 export tests and the 2 migration tests need interfaces added by the fix, so they had no "before" run.
+- After the repairs, `uv run pytest` gave **57 passed, 0 failed, 0 skipped** (29.1 s). The 19 tests added to the previous 38 are:
+  - 3 activation tests;
+  - 5 citation tests;
+  - 2 archived-report tests;
+  - 2 gate-verdict tests;
+  - 5 export-verification tests;
+  - 2 upgrade tests.
+- One existing test changed by design: `test_stale_parent_version_cannot_be_promoted`.
+  - Its engine path now reports `stale_validation`, and a direct activation with the old verdict raises `StaleValidation`.
+  - The stale-parent guard is still exercised: a fresh verdict against the current set still raises `StaleParentVersion`.
+- Schemas were generated into a scratch directory and diffed against the HEAD schemas. Only `gate_request`, `gate_verdict` and `skill_set_export` changed, and only as intended. The generated files were then installed into `contracts/v1/`, and the drift test confirms that the working-tree schemas match the models.
+- Upgrade check: I made a TEMPLATE copy of the development database (at 0001: 1 project, 1 run, 2 skill sets, 2 activations).
+  - 0002 applied, and its NOTICE reported 0 pre-0002 activations replacing a set other than their gate baseline.
+  - Both sets exported as v2 and verified; both skill-version traces passed.
+  - The copy was then dropped.
+  - In tests, an upgrade from a 0001-only database kept export digests identical, and the migration refused a 0001 database containing a cross-project membership.
+- `uv run somnia demo`:
+  - completed 7 stages and migrated the development database to 0002;
+  - its archived report bytes read `completed`/`done` with the report stage `succeeded`;
+  - `skill-set export --out` followed by `skill-set verify` returned `ok: true` with two scientific-use blockers (mock-validated; not independent).
+
+Failures, exclusions and negative results:
+- The trusted channel for export digests is not defined. Verification is only as strong as that channel (D035, open blocker).
+- Pending runs created before the fixture change fail closed and must be recreated (D034). The development database had none.
+- No mutation run was repeated for the new guards beyond the before-fix failures. The Python checks of D032 and D033 are also backed by 0002 triggers, so removing one layer alone would still be caught, but by a different error.
+
+Measured cost and unresolved liability: CAD 0 experimental spend. No CAD envelopes. 0 outstanding reservations.
+Interpretation: infrastructure correctness under mocks only; nothing here measures learning.
+Next action: Codex re-review of the repairs; the user commits and pushes.

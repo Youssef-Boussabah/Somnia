@@ -60,6 +60,10 @@ class StaleActivation(SomniaError):
     """The active skill set changed since the candidate's baseline (optimistic check failed)."""
 
 
+class StaleValidation(StaleActivation):
+    """The gate verdict was produced against a skill set that is no longer active; validate again."""
+
+
 class StaleParentVersion(SomniaError):
     """The candidate revises a skill version that is no longer the active one."""
 
@@ -68,8 +72,16 @@ class IneligibleCandidate(SomniaError):
     """The candidate's gate decision does not permit activation under the given policy."""
 
 
+class ProjectMismatch(IneligibleCandidate):
+    """The candidate, its gate baseline and the target project do not all belong to one project."""
+
+
 class IntegrityFailure(SomniaError):
     """A stored hash does not match recomputed content."""
+
+
+class ActivationInvariantViolation(IntegrityFailure):
+    """The database rejected a skill-set membership or activation record (SQLSTATE SA001)."""
 
 
 class FixtureError(SomniaError):
@@ -82,6 +94,7 @@ _SQLSTATE_MAP: dict[str, type[SomniaError]] = {
     "SB002": InvalidReservationTransition,
     "SG001": GateHashMismatch,
     "SP001": PartitionViolation,
+    "SA001": ActivationInvariantViolation,
 }
 
 

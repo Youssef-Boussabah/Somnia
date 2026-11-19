@@ -52,6 +52,24 @@ def test_full_cycle_report_is_labelled_and_complete(conn, artifacts, project):
     assert json.loads(artifacts.get(sha))["run_id"] == str(run["run_id"])
 
 
+def _archived_report(conn, artifacts, run_id):
+    sha = conn.execute("SELECT output->>'report_artifact' AS s FROM stage_attempts WHERE run_id = %s"
+                       " AND stage = 'report' AND status = 'succeeded'", (run_id,)).fetchone()["s"]
+    return json.loads(artifacts.get(sha).decode("utf-8"))  # the stored bytes, re-verified against their hash
+
+
+def test_archived_report_describes_the_completed_run(conn, artifacts, project):
+    run = _completed(conn, artifacts, project)
+    archived = _archived_report(conn, artifacts, run["run_id"])
+    assert archived["run_id"] == str(run["run_id"])
+    assert archived["status"] == "completed"
+    assert archived["current_stage"] == "done"
+    report_stage = next(s for s in archived["stages"] if s["stage"] == "report")
+    assert [a["status"] for a in report_stage["attempts"]] == ["succeeded"]
+    assert all(a["status"] == "succeeded" for s in archived["stages"] for a in s["attempts"])
+    assert archived["unresolved"] == {"reservations": [], "failed_or_abandoned_attempts": []}
+
+
 def test_artifacts_trace_back_to_inputs(conn, artifacts, project):
     run = _completed(conn, artifacts, project)
     for v in conn.execute("SELECT id FROM skill_versions WHERE created_by_run_id = %s", (run["run_id"],)).fetchall():

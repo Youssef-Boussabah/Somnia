@@ -42,7 +42,21 @@
     }
   },
   "additionalProperties": false,
-  "description": "What a validator returns. ``independent`` must be False for any mock or learner-side gate.",
+  "description": "What a validator returns. ``independent`` must be False for any mock or learner-side gate.\nA verdict with ``is_mock=true`` and ``independent=true`` is rejected by this model, by the\nexported JSON Schema (``not`` clause) and by the database CHECK constraint.",
+  "not": {
+    "properties": {
+      "independent": {
+        "const": true
+      },
+      "is_mock": {
+        "const": true
+      }
+    },
+    "required": [
+      "is_mock",
+      "independent"
+    ]
+  },
   "properties": {
     "candidate_hash": {
       "title": "Candidate Hash",

@@ -1,0 +1,156 @@
+{
+  "label": "SYNTHETIC DEVELOPMENT FIXTURE - two candidates that both pass the mock gate against the same baseline; scripted mock outputs, not model outputs or measurements",
+  "synthetic": true,
+  "script_id": "two_passing_candidates_v1",
+  "responses": {
+    "consolidate.v2": {
+      "hypotheses": [
+        {
+          "claim": "Advancing the progress checkpoint before durably writing the index record lets a crash between the two operations silently drop that record on restart.",
+          "mechanism": "On restart the indexer resumes after the checkpointed note, so a note whose record was never appended is skipped.",
+          "falsifier": "If a crash injected between the checkpoint write and the index append, followed by restart, still yields every note indexed exactly once, the hypothesis is false.",
+          "source_event_refs": [
+            "s1/evt-002",
+            "s1/evt-004"
+          ]
+        },
+        {
+          "claim": "Replaying a note after restart may duplicate its index record because the append is not idempotent.",
+          "mechanism": "A crash after the append but before the checkpoint causes the note to be processed again.",
+          "falsifier": "If a crash after the append followed by restart never produces duplicate records, the hypothesis is false.",
+          "source_event_refs": [
+            "s1/evt-002"
+          ]
+        }
+      ]
+    },
+    "extract.v1": {
+      "candidates": [
+        {
+          "slug": "durable-output-before-progress",
+          "title": "Make output durable before advancing progress",
+          "procedure": "For resumable work: (1) write and flush the output for an item; (2) only then advance the progress checkpoint; (3) make reprocessing an item idempotent (for example a keyed upsert) so a crash between the steps is safe to retry.",
+          "applicability": {
+            "domain": "python-reliability",
+            "requires_tags": [
+              "resumable",
+              "local-persistence"
+            ]
+          },
+          "exclusions": {
+            "tags": [
+              "irreversible-external-effect"
+            ]
+          },
+          "prerequisites": [
+            "a controllable local persistence boundary"
+          ],
+          "known_limits": "Does not cover side effects that cannot be rolled back or deduplicated. Does not prescribe a global lock.",
+          "evidence": {
+            "hypothesis_ordinals": [
+              1
+            ],
+            "scenario_ordinals": [
+              1
+            ]
+          }
+        },
+        {
+          "slug": "idempotent-reprocessing",
+          "title": "Make reprocessing an item idempotent",
+          "procedure": "For resumable work that may replay an item after a crash: write each output with a stable item key (for example a keyed upsert or a per-item file named by the key) so that processing the same item twice leaves exactly one record.",
+          "applicability": {
+            "domain": "python-reliability",
+            "requires_tags": [
+              "resumable",
+              "local-persistence"
+            ]
+          },
+          "exclusions": {
+            "tags": [
+              "irreversible-external-effect"
+            ]
+          },
+          "prerequisites": [
+            "a stable key per item"
+          ],
+          "known_limits": "Does not prevent lost items when progress is advanced before output is durable.",
+          "evidence": {
+            "hypothesis_ordinals": [
+              2
+            ],
+            "scenario_ordinals": [
+              1
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "scenarios": {
+    "1": [
+      {
+        "title": "Crash between checkpoint write and index append",
+        "intervention": "terminate the process after checkpoint.json is written and before index.jsonl is appended, then restart",
+        "expected_invariant": "after restart every note is indexed exactly once",
+        "reference_impl": "append record; flush; then advance checkpoint (fixture text only)",
+        "faulty_impl": "advance checkpoint; then append record (fixture text only)",
+        "oracle": "compare the set and multiplicity of indexed note ids with the input note ids (fixture text only)",
+        "mock_validity_checks": {
+          "reference_passes": true,
+          "known_fault_detected": true,
+          "intervention_reachable": true
+        }
+      }
+    ],
+    "2": [
+      {
+        "title": "Duplicate record after replay",
+        "intervention": "terminate after append and before checkpoint, then restart",
+        "expected_invariant": "no duplicate records",
+        "reference_impl": "keyed upsert (fixture text only)",
+        "faulty_impl": "plain append (fixture text only)",
+        "oracle": "count records per note id (fixture text only)",
+        "mock_validity_checks": {
+          "reference_passes": true,
+          "known_fault_detected": false,
+          "intervention_reachable": true
+        }
+      }
+    ]
+  },
+  "rehearsal_outcomes": {
+    "1": [
+      "fault_detected",
+      "fault_detected"
+    ]
+  },
+  "gate_verdicts": {
+    "durable-output-before-progress": {
+      "decision": "pass",
+      "reason": "scripted pass for development",
+      "paired_scores": [
+        {
+          "task_id": "dev-gate-fixture-a",
+          "root_cluster_id": "dev-root-1",
+          "repeat": 1,
+          "without_skill": 0.0,
+          "with_skill": 1.0
+        }
+      ]
+    },
+    "idempotent-reprocessing": {
+      "decision": "pass",
+      "reason": "scripted pass for development (second candidate)",
+      "paired_scores": [
+        {
+          "task_id": "dev-gate-fixture-d",
+          "root_cluster_id": "dev-root-4",
+          "repeat": 1,
+          "without_skill": 0.0,
+          "with_skill": 1.0
+        }
+      ]
+    }
+  }
+}

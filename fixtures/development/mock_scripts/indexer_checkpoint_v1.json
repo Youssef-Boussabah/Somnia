@@ -3,19 +3,19 @@
   "synthetic": true,
   "script_id": "indexer_checkpoint_v1",
   "responses": {
-    "consolidate.v1": {
+    "consolidate.v2": {
       "hypotheses": [
         {
           "claim": "Advancing the progress checkpoint before durably writing the index record lets a crash between the two operations silently drop that record on restart.",
           "mechanism": "On restart the indexer resumes after the checkpointed note, so a note whose record was never appended is skipped.",
           "falsifier": "If a crash injected between the checkpoint write and the index append, followed by restart, still yields every note indexed exactly once, the hypothesis is false.",
-          "source_event_keys": ["evt-002", "evt-004"]
+          "source_event_refs": ["s1/evt-002", "s1/evt-004"]
         },
         {
           "claim": "Replaying a note after restart may duplicate its index record because the append is not idempotent.",
           "mechanism": "A crash after the append but before the checkpoint causes the note to be processed again.",
           "falsifier": "If a crash after the append followed by restart never produces duplicate records, the hypothesis is false.",
-          "source_event_keys": ["evt-002"]
+          "source_event_refs": ["s1/evt-002"]
         }
       ]
     },

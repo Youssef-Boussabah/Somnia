@@ -50,8 +50,8 @@ def _ensure_table(conn: psycopg.Connection) -> None:
     )
 
 
-def migrate(conn: psycopg.Connection) -> list[int]:
-    """Apply pending migrations. Returns the versions applied by this call."""
+def migrate(conn: psycopg.Connection, *, target: int | None = None) -> list[int]:
+    """Apply pending migrations (up to ``target`` if given). Returns the versions applied by this call."""
     applied_now: list[int] = []
     with conn.transaction():
         conn.execute("SELECT pg_advisory_xact_lock(%s)", (_LOCK_KEY,))
@@ -59,6 +59,8 @@ def migrate(conn: psycopg.Connection) -> list[int]:
         rows = conn.execute("SELECT version, sha256 FROM public.somnia_schema_migrations").fetchall()
         applied = {r["version"]: r["sha256"] for r in rows}
         for mig in available_migrations():
+            if target is not None and mig.version > target:
+                break
             if mig.version in applied:
                 if applied[mig.version] != mig.sha256:
                     raise RuntimeError(

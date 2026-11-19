@@ -20,7 +20,8 @@ from .migrate import migrate, status
 from .projects import active_skill_set_id, create_project, project_id
 from .report import build_report, render_text, trace_skill_version
 from .retrieval import render_context, retrieve_context
-from .skills import export_skill_set
+from .export_verify import ExportVerificationError, scientific_use_blockers, verify_skill_set_export
+from .skills import export_skill_set, skill_set_export_digest
 from .snapshots import create_snapshot
 
 FIXTURES = Path("fixtures/development")
@@ -134,10 +135,31 @@ def cmd_retrieve(a):
 
 
 def cmd_skillset_export(a):
+    """Print (or write) a SkillSetExport v2. The export digest goes to stderr (or stdout with --out):
+    hand it to the evaluator through a trusted channel, separately from the JSON."""
     conn, _ = _ctx()
     pid = project_id(conn, a.project)
     sid = uuid.UUID(a.set) if a.set else active_skill_set_id(conn, pid)
-    _print(export_skill_set(conn, sid).model_dump(mode="json"))
+    exp = export_skill_set(conn, sid)
+    text = json.dumps(exp.model_dump(mode="json"), indent=2, ensure_ascii=False) + "\n"
+    digest = f"export_digest sha256:{skill_set_export_digest(exp)}"
+    if a.out:
+        Path(a.out).write_text(text, encoding="utf-8", newline="\n")
+        print(digest)
+    else:
+        sys.stdout.write(text)
+        print(digest, file=sys.stderr)
+
+
+def cmd_skillset_verify(a):
+    """Verify an exported JSON file against a trusted digest. Uses no database."""
+    try:
+        doc = verify_skill_set_export(Path(a.file).read_bytes(), a.digest)
+    except ExportVerificationError as exc:
+        _print({"ok": False, "problems": exc.problems})
+        sys.exit(1)
+    _print({"ok": True, "skill_set_id": doc["skill_set_id"], "version": doc["version"],
+            "members": len(doc["members"]), "scientific_use_blockers": scientific_use_blockers(doc)})
 
 
 def cmd_contracts_export(a):
@@ -214,7 +236,9 @@ def main(argv: list[str] | None = None) -> None:
     x.add_argument("--json", action="store_true"); x.set_defaults(fn=cmd_retrieve)
     ss = sub.add_parser("skill-set").add_subparsers(dest="sub", required=True)
     x = ss.add_parser("export"); x.add_argument("--project", required=True); x.add_argument("--set")
-    x.set_defaults(fn=cmd_skillset_export)
+    x.add_argument("--out"); x.set_defaults(fn=cmd_skillset_export)
+    x = ss.add_parser("verify"); x.add_argument("file"); x.add_argument("--digest", required=True)
+    x.set_defaults(fn=cmd_skillset_verify)
     co = sub.add_parser("contracts").add_subparsers(dest="sub", required=True)
     x = co.add_parser("export"); x.add_argument("dir", nargs="?", default="contracts/v1")
     x.set_defaults(fn=cmd_contracts_export)

@@ -17,6 +17,9 @@ pgdata/
 *.dump
 *.backup
 
+# --- Archives (review bundles are built outside the repository) ---
+*.zip
+
 # --- Runtime traces, artifacts and logs ---
 traces/
 runs/

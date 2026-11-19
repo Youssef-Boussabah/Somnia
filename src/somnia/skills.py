@@ -10,6 +10,7 @@ from psycopg.types.json import Jsonb
 
 from .contracts import CandidateSkill, GateVerdict, SkillBody, SkillSetExport, SkillSetMember
 from .errors import IntegrityFailure, translating
+from .export_verify import export_digest
 from .hashing import canonical_json, hash_obj
 from .mock import MOCK_EMBEDDING_SPEC, approx_tokens, mock_embedding, vector_literal
 
@@ -132,11 +133,23 @@ def export_skill_set(conn: psycopg.Connection, skill_set_id: UUID) -> SkillSetEx
     members = []
     for m in raw:
         c = load_candidate(conn, m["skill_version_id"])
-        members.append(SkillSetMember(skill_slug=c.body.slug, skill_version_id=c.skill_version_id, version=c.version,
+        if c.skill_id != m["skill_id"]:
+            raise IntegrityFailure(f"skill set {skill_set_id} member {m['skill_version_id']} has a mismatched skill")
+        members.append(SkillSetMember(skill_slug=c.body.slug, skill_id=c.skill_id, skill_version_id=c.skill_version_id,
+                                      version=c.version, parent_version_id=c.parent_version_id,
                                       content_hash=c.content_hash, gate_decision_id=m["gate_decision_id"],
                                       gate_is_mock=m["gate_is_mock"], gate_independent=m["gate_independent"],
                                       token_length=c.token_length, body=c.body))
     members.sort(key=lambda x: x.skill_slug)
-    return SkillSetExport(skill_set_id=s["id"], project_id=s["project_id"], version=s["version"],
-                          predecessor_id=s["predecessor_id"], content_hash=s["content_hash"],
-                          contains_mock_validation=s["contains_mock_validation"], members=members)
+    try:
+        return SkillSetExport(skill_set_id=s["id"], project_id=s["project_id"], version=s["version"],
+                              predecessor_id=s["predecessor_id"], content_hash=s["content_hash"],
+                              contains_mock_validation=s["contains_mock_validation"], members=members)
+    except ValueError as exc:  # pydantic ValidationError: stored flags disagree with the members
+        raise IntegrityFailure(f"skill set {skill_set_id} validation flags are inconsistent: {exc}") from exc
+
+
+def skill_set_export_digest(export: SkillSetExport) -> str:
+    """The digest an evaluator must obtain through a trusted channel to verify ``export``
+    (SHA-256 of the canonical JSON of the whole export; see export_verify)."""
+    return export_digest(export.model_dump(mode="json"))
