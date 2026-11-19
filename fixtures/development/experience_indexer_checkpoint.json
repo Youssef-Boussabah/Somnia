@@ -1,0 +1,18 @@
+{
+  "label": "SYNTHETIC DEVELOPMENT FIXTURE - fake experience, not an observed session",
+  "synthetic": true,
+  "session_label": "dev-indexer-checkpoint-001 (synthetic)",
+  "agent_config": {"agent": "mock-reference-agent", "version": "0.0.0-fixture", "tools": ["read_file", "write_file", "run_tests"]},
+  "events": [
+    {"key": "evt-001", "type": "task_started",
+     "payload": {"task": "Implement a resumable indexer for a local research-notebook directory (public development example)", "partition": "development"}},
+    {"key": "evt-002", "type": "tool_call",
+     "payload": {"tool": "write_file", "path": "indexer.py", "summary": "per note: write checkpoint.json with the note id, then append the record to index.jsonl"}},
+    {"key": "evt-003", "type": "test_result",
+     "payload": {"suite": "visible smoke tests", "passed": 4, "failed": 0, "note": "small inputs, no interruption"}},
+    {"key": "evt-004", "type": "observation",
+     "payload": {"text": "trace shows checkpoint.json advanced before index.jsonl was written in every iteration"}},
+    {"key": "evt-005", "type": "task_outcome",
+     "payload": {"result": "agent reported success on smoke tests", "restart_behaviour_tested": false}}
+  ]
+}

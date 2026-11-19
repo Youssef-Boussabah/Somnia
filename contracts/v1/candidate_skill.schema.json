@@ -1,0 +1,123 @@
+{
+  "$defs": {
+    "SkillBody": {
+      "additionalProperties": false,
+      "description": "The immutable, hashed content of a skill version.",
+      "properties": {
+        "applicability": {
+          "additionalProperties": true,
+          "description": "e.g. {\"domain\": \"python-reliability\", \"requires_tags\": [...]}",
+          "title": "Applicability",
+          "type": "object"
+        },
+        "exclusions": {
+          "additionalProperties": true,
+          "description": "e.g. {\"tags\": [\"irreversible-external-effect\"]}",
+          "title": "Exclusions",
+          "type": "object"
+        },
+        "known_limits": {
+          "title": "Known Limits",
+          "type": "string"
+        },
+        "prerequisites": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Prerequisites",
+          "type": "array"
+        },
+        "procedure": {
+          "title": "Procedure",
+          "type": "string"
+        },
+        "slug": {
+          "title": "Slug",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug",
+        "title",
+        "procedure",
+        "applicability",
+        "exclusions",
+        "known_limits"
+      ],
+      "title": "SkillBody",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "body": {
+      "$ref": "#/$defs/SkillBody"
+    },
+    "content_hash": {
+      "title": "Content Hash",
+      "type": "string"
+    },
+    "origin": {
+      "enum": [
+        "mock",
+        "model",
+        "user"
+      ],
+      "title": "Origin",
+      "type": "string"
+    },
+    "parent_version_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Parent Version Id"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "skill_id": {
+      "format": "uuid",
+      "title": "Skill Id",
+      "type": "string"
+    },
+    "skill_version_id": {
+      "format": "uuid",
+      "title": "Skill Version Id",
+      "type": "string"
+    },
+    "token_length": {
+      "title": "Token Length",
+      "type": "integer"
+    },
+    "version": {
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "skill_version_id",
+    "skill_id",
+    "version",
+    "parent_version_id",
+    "content_hash",
+    "token_length",
+    "origin",
+    "body"
+  ],
+  "title": "CandidateSkill",
+  "type": "object"
+}

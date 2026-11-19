@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "mode": "mock",
+  "mock_script": "indexer_checkpoint_v1",
+  "gateway": {
+    "provider": "mock",
+    "model": "mock-optimizer-fixture",
+    "unit": "MOCK_MICRO",
+    "max_input_tokens": 4000,
+    "max_output_tokens": 1000,
+    "input_micro_per_token": 2,
+    "output_micro_per_token": 8
+  },
+  "limits": {
+    "max_hypotheses": 4,
+    "max_scenarios_per_hypothesis": 2,
+    "max_executed_scenarios": 4,
+    "max_attempts_per_scenario": 2,
+    "max_candidates": 2
+  },
+  "gate": {"validator": "mock", "allow_mock_gate_activation": true},
+  "activation": {"auto_activate": true},
+  "embedding_spec": "mock-hash-v1",
+  "retrieval_max_skills": 3,
+  "retrieval_token_ceiling": 1500
+}

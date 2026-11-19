@@ -1,0 +1,57 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "diagnostics": {
+      "additionalProperties": true,
+      "title": "Diagnostics",
+      "type": "object"
+    },
+    "executor": {
+      "title": "Executor",
+      "type": "string"
+    },
+    "is_mock": {
+      "title": "Is Mock",
+      "type": "boolean"
+    },
+    "outcome": {
+      "enum": [
+        "fault_detected",
+        "no_fault_detected",
+        "task_failure",
+        "invalid_scenario",
+        "agent_timeout",
+        "infrastructure_failure",
+        "safety_violation"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "solution_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Solution Hash"
+    }
+  },
+  "required": [
+    "outcome",
+    "executor",
+    "is_mock",
+    "solution_hash",
+    "diagnostics"
+  ],
+  "title": "ExecutionResult",
+  "type": "object"
+}

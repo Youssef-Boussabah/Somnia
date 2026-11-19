@@ -1,0 +1,40 @@
+{
+  "additionalProperties": false,
+  "description": "A rehearsal scenario. Reference/faulty implementations and the oracle are referenced by hash.",
+  "properties": {
+    "expected_invariant": {
+      "title": "Expected Invariant",
+      "type": "string"
+    },
+    "faulty_hash": {
+      "title": "Faulty Hash",
+      "type": "string"
+    },
+    "intervention": {
+      "title": "Intervention",
+      "type": "string"
+    },
+    "oracle_hash": {
+      "title": "Oracle Hash",
+      "type": "string"
+    },
+    "reference_hash": {
+      "title": "Reference Hash",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "title",
+    "intervention",
+    "expected_invariant",
+    "reference_hash",
+    "faulty_hash",
+    "oracle_hash"
+  ],
+  "title": "ScenarioSpec",
+  "type": "object"
+}

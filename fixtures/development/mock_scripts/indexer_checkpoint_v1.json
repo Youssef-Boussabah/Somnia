@@ -1,0 +1,90 @@
+{
+  "label": "SYNTHETIC DEVELOPMENT FIXTURE - scripted mock outputs, not model outputs or measurements",
+  "synthetic": true,
+  "script_id": "indexer_checkpoint_v1",
+  "responses": {
+    "consolidate.v1": {
+      "hypotheses": [
+        {
+          "claim": "Advancing the progress checkpoint before durably writing the index record lets a crash between the two operations silently drop that record on restart.",
+          "mechanism": "On restart the indexer resumes after the checkpointed note, so a note whose record was never appended is skipped.",
+          "falsifier": "If a crash injected between the checkpoint write and the index append, followed by restart, still yields every note indexed exactly once, the hypothesis is false.",
+          "source_event_keys": ["evt-002", "evt-004"]
+        },
+        {
+          "claim": "Replaying a note after restart may duplicate its index record because the append is not idempotent.",
+          "mechanism": "A crash after the append but before the checkpoint causes the note to be processed again.",
+          "falsifier": "If a crash after the append followed by restart never produces duplicate records, the hypothesis is false.",
+          "source_event_keys": ["evt-002"]
+        }
+      ]
+    },
+    "extract.v1": {
+      "candidates": [
+        {
+          "slug": "durable-output-before-progress",
+          "title": "Make output durable before advancing progress",
+          "procedure": "For resumable work: (1) write and flush the output for an item; (2) only then advance the progress checkpoint; (3) make reprocessing an item idempotent (for example a keyed upsert) so a crash between the steps is safe to retry.",
+          "applicability": {"domain": "python-reliability", "requires_tags": ["resumable", "local-persistence"]},
+          "exclusions": {"tags": ["irreversible-external-effect"]},
+          "prerequisites": ["a controllable local persistence boundary"],
+          "known_limits": "Does not cover side effects that cannot be rolled back or deduplicated. Does not prescribe a global lock.",
+          "evidence": {"hypothesis_ordinals": [1], "scenario_ordinals": [1]}
+        },
+        {
+          "slug": "always-retry-on-failure",
+          "title": "Retry any failed operation",
+          "procedure": "Wrap every operation in a retry loop until it succeeds.",
+          "applicability": {"domain": "python-reliability", "requires_tags": []},
+          "exclusions": {"tags": []},
+          "prerequisites": [],
+          "known_limits": "Overbroad; unsafe for non-idempotent effects.",
+          "evidence": {"hypothesis_ordinals": [1], "scenario_ordinals": [1]}
+        }
+      ]
+    }
+  },
+  "scenarios": {
+    "1": [
+      {
+        "title": "Crash between checkpoint write and index append",
+        "intervention": "terminate the process after checkpoint.json is written and before index.jsonl is appended, then restart",
+        "expected_invariant": "after restart every note is indexed exactly once",
+        "reference_impl": "append record; flush; then advance checkpoint (fixture text only)",
+        "faulty_impl": "advance checkpoint; then append record (fixture text only)",
+        "oracle": "compare the set and multiplicity of indexed note ids with the input note ids (fixture text only)",
+        "mock_validity_checks": {"reference_passes": true, "known_fault_detected": true, "intervention_reachable": true}
+      }
+    ],
+    "2": [
+      {
+        "title": "Duplicate record after replay",
+        "intervention": "terminate after append and before checkpoint, then restart",
+        "expected_invariant": "no duplicate records",
+        "reference_impl": "keyed upsert (fixture text only)",
+        "faulty_impl": "plain append (fixture text only)",
+        "oracle": "count records per note id (fixture text only)",
+        "mock_validity_checks": {"reference_passes": true, "known_fault_detected": false, "intervention_reachable": true}
+      }
+    ]
+  },
+  "rehearsal_outcomes": {
+    "1": ["fault_detected", "fault_detected"]
+  },
+  "gate_verdicts": {
+    "durable-output-before-progress": {
+      "decision": "pass",
+      "reason": "scripted pass for development",
+      "paired_scores": [
+        {"task_id": "dev-gate-fixture-a", "root_cluster_id": "dev-root-1", "repeat": 1, "without_skill": 0.0, "with_skill": 1.0}
+      ]
+    },
+    "always-retry-on-failure": {
+      "decision": "fail",
+      "reason": "scripted fail: overbroad scope",
+      "paired_scores": [
+        {"task_id": "dev-gate-fixture-b", "root_cluster_id": "dev-root-2", "repeat": 1, "without_skill": 1.0, "with_skill": 0.0}
+      ]
+    }
+  }
+}

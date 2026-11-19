@@ -1,0 +1,48 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "base_skill_set_id": {
+      "format": "uuid",
+      "title": "Base Skill Set Id",
+      "type": "string"
+    },
+    "content_hash": {
+      "title": "Content Hash",
+      "type": "string"
+    },
+    "created": {
+      "title": "Created",
+      "type": "boolean"
+    },
+    "event_count": {
+      "title": "Event Count",
+      "type": "integer"
+    },
+    "project_id": {
+      "format": "uuid",
+      "title": "Project Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "snapshot_id": {
+      "format": "uuid",
+      "title": "Snapshot Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "snapshot_id",
+    "project_id",
+    "content_hash",
+    "base_skill_set_id",
+    "event_count",
+    "created"
+  ],
+  "title": "SnapshotInfo",
+  "type": "object"
+}

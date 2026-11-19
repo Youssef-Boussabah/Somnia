@@ -1,0 +1,56 @@
+{
+  "label": "SYNTHETIC DEVELOPMENT FIXTURE - scripted mock outputs for a revision cycle, not model outputs or measurements",
+  "synthetic": true,
+  "script_id": "indexer_checkpoint_revision_v1",
+  "responses": {
+    "consolidate.v1": {
+      "hypotheses": [
+        {
+          "claim": "Flushing the output file is not sufficient if the write itself can be torn by a crash; a partially written record can corrupt the index.",
+          "mechanism": "A crash during a non-atomic write leaves a truncated final line.",
+          "falsifier": "If crashes injected during the write never leave a truncated record, the hypothesis is false.",
+          "source_event_keys": ["evt-002", "evt-004"]
+        }
+      ]
+    },
+    "extract.v1": {
+      "candidates": [
+        {
+          "slug": "durable-output-before-progress",
+          "title": "Make output durable (atomically) before advancing progress",
+          "procedure": "For resumable work: (1) write the output for an item to a temporary file and atomically rename it into place (or use a transactional store); (2) only then advance the progress checkpoint; (3) make reprocessing an item idempotent so a crash between the steps is safe to retry.",
+          "applicability": {"domain": "python-reliability", "requires_tags": ["resumable", "local-persistence"]},
+          "exclusions": {"tags": ["irreversible-external-effect"]},
+          "prerequisites": ["a controllable local persistence boundary", "atomic rename on the target filesystem"],
+          "known_limits": "Does not cover side effects that cannot be rolled back or deduplicated. Atomic rename semantics vary by filesystem.",
+          "evidence": {"hypothesis_ordinals": [1], "scenario_ordinals": [1]}
+        }
+      ]
+    }
+  },
+  "scenarios": {
+    "1": [
+      {
+        "title": "Crash during record write",
+        "intervention": "terminate the process mid-write, then restart",
+        "expected_invariant": "the index never contains a truncated record",
+        "reference_impl": "write temp file then os.replace (fixture text only)",
+        "faulty_impl": "direct append without atomic replace (fixture text only)",
+        "oracle": "parse every index line; require all records complete (fixture text only)",
+        "mock_validity_checks": {"reference_passes": true, "known_fault_detected": true, "intervention_reachable": true}
+      }
+    ]
+  },
+  "rehearsal_outcomes": {
+    "1": ["fault_detected"]
+  },
+  "gate_verdicts": {
+    "durable-output-before-progress": {
+      "decision": "pass",
+      "reason": "scripted pass for development (revision)",
+      "paired_scores": [
+        {"task_id": "dev-gate-fixture-c", "root_cluster_id": "dev-root-3", "repeat": 1, "without_skill": 0.0, "with_skill": 1.0}
+      ]
+    }
+  }
+}

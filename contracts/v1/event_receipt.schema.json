@@ -1,0 +1,43 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "created": {
+      "description": "False when an identical idempotent retry returned the existing event",
+      "title": "Created",
+      "type": "boolean"
+    },
+    "event_hash": {
+      "title": "Event Hash",
+      "type": "string"
+    },
+    "event_id": {
+      "format": "uuid",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "seq": {
+      "title": "Seq",
+      "type": "integer"
+    },
+    "session_id": {
+      "format": "uuid",
+      "title": "Session Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event_id",
+    "session_id",
+    "seq",
+    "event_hash",
+    "created"
+  ],
+  "title": "EventReceipt",
+  "type": "object"
+}

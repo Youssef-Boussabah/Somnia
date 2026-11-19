@@ -1,0 +1,271 @@
+{
+  "$defs": {
+    "CandidateSkill": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "$ref": "#/$defs/SkillBody"
+        },
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "origin": {
+          "enum": [
+            "mock",
+            "model",
+            "user"
+          ],
+          "title": "Origin",
+          "type": "string"
+        },
+        "parent_version_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Parent Version Id"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "skill_id": {
+          "format": "uuid",
+          "title": "Skill Id",
+          "type": "string"
+        },
+        "skill_version_id": {
+          "format": "uuid",
+          "title": "Skill Version Id",
+          "type": "string"
+        },
+        "token_length": {
+          "title": "Token Length",
+          "type": "integer"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "skill_version_id",
+        "skill_id",
+        "version",
+        "parent_version_id",
+        "content_hash",
+        "token_length",
+        "origin",
+        "body"
+      ],
+      "title": "CandidateSkill",
+      "type": "object"
+    },
+    "SkillBody": {
+      "additionalProperties": false,
+      "description": "The immutable, hashed content of a skill version.",
+      "properties": {
+        "applicability": {
+          "additionalProperties": true,
+          "description": "e.g. {\"domain\": \"python-reliability\", \"requires_tags\": [...]}",
+          "title": "Applicability",
+          "type": "object"
+        },
+        "exclusions": {
+          "additionalProperties": true,
+          "description": "e.g. {\"tags\": [\"irreversible-external-effect\"]}",
+          "title": "Exclusions",
+          "type": "object"
+        },
+        "known_limits": {
+          "title": "Known Limits",
+          "type": "string"
+        },
+        "prerequisites": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Prerequisites",
+          "type": "array"
+        },
+        "procedure": {
+          "title": "Procedure",
+          "type": "string"
+        },
+        "slug": {
+          "title": "Slug",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug",
+        "title",
+        "procedure",
+        "applicability",
+        "exclusions",
+        "known_limits"
+      ],
+      "title": "SkillBody",
+      "type": "object"
+    },
+    "SkillSetExport": {
+      "additionalProperties": false,
+      "description": "Frozen skill-set view an evaluator consumes. Verify ``content_hash`` before use.",
+      "properties": {
+        "contains_mock_validation": {
+          "title": "Contains Mock Validation",
+          "type": "boolean"
+        },
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "members": {
+          "items": {
+            "$ref": "#/$defs/SkillSetMember"
+          },
+          "title": "Members",
+          "type": "array"
+        },
+        "predecessor_id": {
+          "anyOf": [
+            {
+              "format": "uuid",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Predecessor Id"
+        },
+        "project_id": {
+          "format": "uuid",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "skill_set_id": {
+          "format": "uuid",
+          "title": "Skill Set Id",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "skill_set_id",
+        "project_id",
+        "version",
+        "predecessor_id",
+        "content_hash",
+        "contains_mock_validation",
+        "members"
+      ],
+      "title": "SkillSetExport",
+      "type": "object"
+    },
+    "SkillSetMember": {
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "$ref": "#/$defs/SkillBody"
+        },
+        "content_hash": {
+          "title": "Content Hash",
+          "type": "string"
+        },
+        "gate_decision_id": {
+          "format": "uuid",
+          "title": "Gate Decision Id",
+          "type": "string"
+        },
+        "gate_independent": {
+          "title": "Gate Independent",
+          "type": "boolean"
+        },
+        "gate_is_mock": {
+          "title": "Gate Is Mock",
+          "type": "boolean"
+        },
+        "skill_slug": {
+          "title": "Skill Slug",
+          "type": "string"
+        },
+        "skill_version_id": {
+          "format": "uuid",
+          "title": "Skill Version Id",
+          "type": "string"
+        },
+        "token_length": {
+          "title": "Token Length",
+          "type": "integer"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "skill_slug",
+        "skill_version_id",
+        "version",
+        "content_hash",
+        "gate_decision_id",
+        "gate_is_mock",
+        "gate_independent",
+        "token_length",
+        "body"
+      ],
+      "title": "SkillSetMember",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "What a validator receives. It never includes hidden oracles or sealed-task content.",
+  "properties": {
+    "baseline_skill_set": {
+      "$ref": "#/$defs/SkillSetExport"
+    },
+    "candidate": {
+      "$ref": "#/$defs/CandidateSkill"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "suite_id": {
+      "title": "Suite Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "candidate",
+    "baseline_skill_set",
+    "suite_id"
+  ],
+  "title": "GateRequest",
+  "type": "object"
+}

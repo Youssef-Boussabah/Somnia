@@ -1,0 +1,85 @@
+{
+  "$defs": {
+    "TaskScope": {
+      "additionalProperties": false,
+      "properties": {
+        "domain": {
+          "title": "Domain",
+          "type": "string"
+        },
+        "tags": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Tags",
+          "type": "array"
+        }
+      },
+      "required": [
+        "domain"
+      ],
+      "title": "TaskScope",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "max_skills": {
+      "default": 3,
+      "minimum": 0,
+      "title": "Max Skills",
+      "type": "integer"
+    },
+    "project_slug": {
+      "title": "Project Slug",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "scope": {
+      "$ref": "#/$defs/TaskScope"
+    },
+    "session_id": {
+      "format": "uuid",
+      "title": "Session Id",
+      "type": "string"
+    },
+    "skill_set_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "None means the project's active set at call time",
+      "title": "Skill Set Id"
+    },
+    "task_query": {
+      "title": "Task Query",
+      "type": "string"
+    },
+    "token_ceiling": {
+      "default": 1500,
+      "exclusiveMinimum": 0,
+      "title": "Token Ceiling",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "project_slug",
+    "session_id",
+    "task_query",
+    "scope"
+  ],
+  "title": "RetrievalRequest",
+  "type": "object"
+}

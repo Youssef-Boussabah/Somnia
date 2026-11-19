@@ -1,0 +1,124 @@
+{
+  "$defs": {
+    "PairedScore": {
+      "additionalProperties": false,
+      "properties": {
+        "repeat": {
+          "title": "Repeat",
+          "type": "integer"
+        },
+        "root_cluster_id": {
+          "title": "Root Cluster Id",
+          "type": "string"
+        },
+        "synthetic": {
+          "description": "True for fixture-scripted numbers that are not measurements",
+          "title": "Synthetic",
+          "type": "boolean"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        },
+        "with_skill": {
+          "title": "With Skill",
+          "type": "number"
+        },
+        "without_skill": {
+          "title": "Without Skill",
+          "type": "number"
+        }
+      },
+      "required": [
+        "task_id",
+        "root_cluster_id",
+        "repeat",
+        "without_skill",
+        "with_skill",
+        "synthetic"
+      ],
+      "title": "PairedScore",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "What a validator returns. ``independent`` must be False for any mock or learner-side gate.",
+  "properties": {
+    "candidate_hash": {
+      "title": "Candidate Hash",
+      "type": "string"
+    },
+    "decision": {
+      "enum": [
+        "pass",
+        "fail",
+        "inconclusive"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "evidence_refs": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "independent": {
+      "title": "Independent",
+      "type": "boolean"
+    },
+    "is_mock": {
+      "title": "Is Mock",
+      "type": "boolean"
+    },
+    "paired_scores": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/PairedScore"
+      },
+      "title": "Paired Scores",
+      "type": "array"
+    },
+    "reason": {
+      "title": "Reason",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "suite_hash": {
+      "title": "Suite Hash",
+      "type": "string"
+    },
+    "suite_id": {
+      "title": "Suite Id",
+      "type": "string"
+    },
+    "validator": {
+      "title": "Validator",
+      "type": "string"
+    },
+    "validator_version": {
+      "title": "Validator Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "candidate_hash",
+    "decision",
+    "reason",
+    "validator",
+    "validator_version",
+    "suite_id",
+    "suite_hash",
+    "independent",
+    "is_mock"
+  ],
+  "title": "GateVerdict",
+  "type": "object"
+}

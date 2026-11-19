@@ -1,0 +1,190 @@
+{
+  "$defs": {
+    "ActivationConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "auto_activate": {
+          "default": false,
+          "title": "Auto Activate",
+          "type": "boolean"
+        }
+      },
+      "title": "ActivationConfig",
+      "type": "object"
+    },
+    "GateConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_mock_gate_activation": {
+          "default": false,
+          "title": "Allow Mock Gate Activation",
+          "type": "boolean"
+        },
+        "validator": {
+          "const": "mock",
+          "default": "mock",
+          "title": "Validator",
+          "type": "string"
+        }
+      },
+      "title": "GateConfig",
+      "type": "object"
+    },
+    "GatewayConfig": {
+      "additionalProperties": false,
+      "description": "Upper-bound pricing used for reservations. In mock mode the unit is MOCK_MICRO (not money).",
+      "properties": {
+        "input_micro_per_token": {
+          "minimum": 0,
+          "title": "Input Micro Per Token",
+          "type": "integer"
+        },
+        "max_input_tokens": {
+          "exclusiveMinimum": 0,
+          "title": "Max Input Tokens",
+          "type": "integer"
+        },
+        "max_output_tokens": {
+          "exclusiveMinimum": 0,
+          "title": "Max Output Tokens",
+          "type": "integer"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "output_micro_per_token": {
+          "minimum": 0,
+          "title": "Output Micro Per Token",
+          "type": "integer"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "unit": {
+          "enum": [
+            "CAD_MICRO",
+            "MOCK_MICRO"
+          ],
+          "title": "Unit",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "unit",
+        "max_input_tokens",
+        "max_output_tokens",
+        "input_micro_per_token",
+        "output_micro_per_token"
+      ],
+      "title": "GatewayConfig",
+      "type": "object"
+    },
+    "LimitsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "max_attempts_per_scenario": {
+          "default": 2,
+          "minimum": 1,
+          "title": "Max Attempts Per Scenario",
+          "type": "integer"
+        },
+        "max_candidates": {
+          "default": 2,
+          "minimum": 0,
+          "title": "Max Candidates",
+          "type": "integer"
+        },
+        "max_executed_scenarios": {
+          "default": 4,
+          "minimum": 0,
+          "title": "Max Executed Scenarios",
+          "type": "integer"
+        },
+        "max_hypotheses": {
+          "default": 4,
+          "minimum": 0,
+          "title": "Max Hypotheses",
+          "type": "integer"
+        },
+        "max_scenarios_per_hypothesis": {
+          "default": 2,
+          "minimum": 0,
+          "title": "Max Scenarios Per Hypothesis",
+          "type": "integer"
+        }
+      },
+      "title": "LimitsConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "activation": {
+      "$ref": "#/$defs/ActivationConfig",
+      "default": {
+        "auto_activate": false
+      }
+    },
+    "embedding_spec": {
+      "default": "mock-hash-v1",
+      "title": "Embedding Spec",
+      "type": "string"
+    },
+    "gate": {
+      "$ref": "#/$defs/GateConfig",
+      "default": {
+        "allow_mock_gate_activation": false,
+        "validator": "mock"
+      }
+    },
+    "gateway": {
+      "$ref": "#/$defs/GatewayConfig"
+    },
+    "limits": {
+      "$ref": "#/$defs/LimitsConfig",
+      "default": {
+        "max_attempts_per_scenario": 2,
+        "max_candidates": 2,
+        "max_executed_scenarios": 4,
+        "max_hypotheses": 4,
+        "max_scenarios_per_hypothesis": 2
+      }
+    },
+    "mock_script": {
+      "title": "Mock Script",
+      "type": "string"
+    },
+    "mode": {
+      "const": "mock",
+      "default": "mock",
+      "title": "Mode",
+      "type": "string"
+    },
+    "retrieval_max_skills": {
+      "default": 3,
+      "title": "Retrieval Max Skills",
+      "type": "integer"
+    },
+    "retrieval_token_ceiling": {
+      "default": 1500,
+      "title": "Retrieval Token Ceiling",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "mock_script",
+    "gateway"
+  ],
+  "title": "RunConfig",
+  "type": "object"
+}

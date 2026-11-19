@@ -1,0 +1,21 @@
+# Local development database for Somnia. Bound to localhost only.
+# Image pinned by tag AND digest (verified 2026-11-18: PostgreSQL 17.12, pgvector 0.8.7).
+services:
+  db:
+    image: pgvector/pgvector:0.8.7-pg17@sha256:b513c48566e4777cd3370451400000c78eda6a08131d68f4c31d4a76f27bd8fd
+    container_name: somnia-db
+    environment:
+      POSTGRES_USER: ${SOMNIA_DB_ADMIN_USER:-somnia_admin}
+      POSTGRES_PASSWORD: ${SOMNIA_DB_ADMIN_PASSWORD:?set SOMNIA_DB_ADMIN_PASSWORD in .env}
+      POSTGRES_DB: somnia
+    ports:
+      - "127.0.0.1:${SOMNIA_DB_PORT:-5433}:5432"
+    volumes:
+      - somnia-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d somnia"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  somnia-pgdata:

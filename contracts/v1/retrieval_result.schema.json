@@ -1,0 +1,166 @@
+{
+  "$defs": {
+    "ExcludedSkill": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "title": "Detail",
+          "type": "string"
+        },
+        "reason": {
+          "enum": [
+            "out_of_domain",
+            "missing_required_tags",
+            "excluded_by_scope",
+            "max_skills",
+            "token_ceiling"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "skill_slug": {
+          "title": "Skill Slug",
+          "type": "string"
+        },
+        "skill_version_id": {
+          "format": "uuid",
+          "title": "Skill Version Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill_slug",
+        "skill_version_id",
+        "reason",
+        "detail"
+      ],
+      "title": "ExcludedSkill",
+      "type": "object"
+    },
+    "SelectedSkill": {
+      "additionalProperties": false,
+      "properties": {
+        "distance": {
+          "title": "Distance",
+          "type": "number"
+        },
+        "gate_decision_id": {
+          "format": "uuid",
+          "title": "Gate Decision Id",
+          "type": "string"
+        },
+        "gate_is_mock": {
+          "title": "Gate Is Mock",
+          "type": "boolean"
+        },
+        "procedure": {
+          "title": "Procedure",
+          "type": "string"
+        },
+        "skill_slug": {
+          "title": "Skill Slug",
+          "type": "string"
+        },
+        "skill_version_id": {
+          "format": "uuid",
+          "title": "Skill Version Id",
+          "type": "string"
+        },
+        "source_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Source Refs",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "token_length": {
+          "title": "Token Length",
+          "type": "integer"
+        },
+        "version": {
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "skill_slug",
+        "skill_version_id",
+        "version",
+        "title",
+        "procedure",
+        "token_length",
+        "distance",
+        "gate_decision_id",
+        "gate_is_mock",
+        "source_refs"
+      ],
+      "title": "SelectedSkill",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "embedding_spec": {
+      "title": "Embedding Spec",
+      "type": "string"
+    },
+    "excluded": {
+      "items": {
+        "$ref": "#/$defs/ExcludedSkill"
+      },
+      "title": "Excluded",
+      "type": "array"
+    },
+    "retrieval_log_id": {
+      "format": "uuid",
+      "title": "Retrieval Log Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "selected": {
+      "items": {
+        "$ref": "#/$defs/SelectedSkill"
+      },
+      "title": "Selected",
+      "type": "array"
+    },
+    "skill_set_contains_mock_validation": {
+      "title": "Skill Set Contains Mock Validation",
+      "type": "boolean"
+    },
+    "skill_set_id": {
+      "format": "uuid",
+      "title": "Skill Set Id",
+      "type": "string"
+    },
+    "skill_set_version": {
+      "title": "Skill Set Version",
+      "type": "integer"
+    },
+    "token_count": {
+      "title": "Token Count",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "retrieval_log_id",
+    "skill_set_id",
+    "skill_set_version",
+    "skill_set_contains_mock_validation",
+    "embedding_spec",
+    "selected",
+    "excluded",
+    "token_count"
+  ],
+  "title": "RetrievalResult",
+  "type": "object"
+}

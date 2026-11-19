@@ -1,0 +1,51 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "activation_id": {
+      "format": "uuid",
+      "title": "Activation Id",
+      "type": "string"
+    },
+    "applied": {
+      "description": "False when this call was an idempotent replay of an earlier activation",
+      "title": "Applied",
+      "type": "boolean"
+    },
+    "new_set_id": {
+      "format": "uuid",
+      "title": "New Set Id",
+      "type": "string"
+    },
+    "new_set_version": {
+      "title": "New Set Version",
+      "type": "integer"
+    },
+    "previous_set_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Previous Set Id"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "activation_id",
+    "previous_set_id",
+    "new_set_id",
+    "new_set_version",
+    "applied"
+  ],
+  "title": "ActivationResult",
+  "type": "object"
+}
