@@ -260,10 +260,12 @@ class SleepWorker:
                 " finished_at = clock_timestamp() WHERE id = %s",
                 (Jsonb(output), hash_obj(output), ctx.attempt_id))
             nxt = next_stage(ctx.stage)
-            self.conn.execute(
+            moved = self.conn.execute(
                 "UPDATE sleep_runs SET current_stage = %s, status = %s,"
                 " finished_at = CASE WHEN %s THEN clock_timestamp() ELSE NULL END WHERE id = %s AND fence = %s",
-                (nxt, "completed" if nxt == DONE else "running", nxt == DONE, run_id, ctx.fence))
+                (nxt, "completed" if nxt == DONE else "running", nxt == DONE, run_id, ctx.fence)).rowcount
+            if moved != 1:  # defence in depth; _assert_lease above should already have failed
+                raise LeaseLost(f"stage pointer update matched {moved} rows for fence {ctx.fence}")
 
     def _block(self, run_id: UUID, fence: int, attempt_id: UUID | None, reason: str) -> None:
         with conn_tx(self.conn):

@@ -47,6 +47,49 @@ def test_expired_worker_cannot_overwrite_newer_worker(connect_db, artifacts, pro
     assert SleepWorker(connect_db(), artifacts, worker_id="C").work(rid).status == "completed"
 
 
+def test_expired_worker_cannot_commit_while_successor_is_mid_stage(connect_db, artifacts, project):
+    """A stalls past its lease; B claims and is still inside the same stage when A tries to commit.
+    Only the fencing token distinguishes them here (the stage pointer has not moved yet)."""
+    conn = connect_db()
+    run = make_run(conn, project["id"])
+    rid = run["run_id"]
+    b_reached, b_go = threading.Event(), threading.Event()
+    b_result: dict = {}
+
+    def hook_b(name, info):
+        if name == "stage.before_commit":
+            b_reached.set()
+            assert b_go.wait(30)
+
+    def run_b():
+        try:
+            b_result["out"] = SleepWorker(connect_db(), artifacts, worker_id="B", lease_ttl_s=30,
+                                          hook=hook_b).work(rid, max_stages=1)
+        except BaseException as exc:  # pragma: no cover - reported by assertion
+            b_result["err"] = exc
+
+    tb = threading.Thread(target=run_b)
+
+    def hook_a(name, info):
+        if name == "stage.before_commit" and not tb.is_alive() and "started" not in b_result:
+            wait_lease_expired(conn, rid)
+            b_result["started"] = True
+            tb.start()
+            assert b_reached.wait(30)  # B is now mid-'consolidate' holding fence 2
+
+    with pytest.raises(LeaseLost):
+        SleepWorker(connect_db(), artifacts, worker_id="A", lease_ttl_s=1, hook=hook_a).work(rid)
+    b_go.set()
+    tb.join(30)
+    assert "err" not in b_result and b_result["out"].stages_run == ["consolidate"]
+    rows = conn.execute("SELECT worker_id, status FROM stage_attempts WHERE run_id = %s AND stage = 'consolidate'"
+                        " ORDER BY fence", (rid,)).fetchall()
+    assert [(r["worker_id"], r["status"]) for r in rows] == [("A", "abandoned"), ("B", "succeeded")]
+    owners = conn.execute("SELECT DISTINCT a.worker_id FROM hypotheses h JOIN stage_attempts a"
+                          " ON a.id = h.stage_attempt_id WHERE h.run_id = %s", (rid,)).fetchall()
+    assert [o["worker_id"] for o in owners] == ["B"]
+
+
 def test_expired_lease_alone_prevents_commit(connect_db, artifacts, project):
     conn = connect_db()
     run = make_run(conn, project["id"])
