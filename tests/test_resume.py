@@ -110,7 +110,13 @@ def test_crash_between_reserve_and_send_blocks_until_reconciled(connect_db, arti
 
     budget.reconcile(conn, res[0]["id"], actual_micro=0, note="mock provider: no request recorded (dev test)")
     unblock_run(conn, run["run_id"])
+    # Billing is settled, but nothing shows the request never completed: no resend (D044).
     out = SleepWorker(connect_db(), artifacts, worker_id="D").work(run["run_id"])
+    assert out.status == "blocked" and out.blocked_reason.startswith("request_outstanding")
+    budget.abandon_request(conn, res[0]["id"], actor="dev-test",
+                           evidence="mock provider call log has no request for this key (dev test)")
+    unblock_run(conn, run["run_id"])
+    out = SleepWorker(connect_db(), artifacts, worker_id="E").work(run["run_id"])
     assert out.status == "completed"
     assert budget.ledger_mismatches(conn, project["id"]) == []
     assert budget.envelope_status(conn, run["envelope_id"])["reserved_micro"] == 0

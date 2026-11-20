@@ -87,6 +87,14 @@ def test_uncertain_billing_retains_reservation(connect_db, artifacts, project):
 
     budget.reconcile(conn, res["id"], actual_micro=1_234, note="dev test: provider usage export shows 1234")
     st = budget.envelope_status(conn, run["envelope_id"])
+    # Billing is reconciled, but the request may still bill up to its bound: the rest stays held (D046).
+    assert (st["reserved_micro"], st["confirmed_micro"]) == (16_000 - 1_234, 1_234)
+    with pytest.raises(BudgetExceeded):
+        _reserve(conn, run["envelope_id"], 16_000)
+    # The sender's call returned (outcome unknown), so its permit has ended: provider evidence suffices.
+    budget.abandon_request(conn, res["id"], actor="dev-test",
+                           evidence="mock provider log: the request failed (dev test)")
+    st = budget.envelope_status(conn, run["envelope_id"])
     assert (st["reserved_micro"], st["confirmed_micro"]) == (0, 1_234)
     _reserve(conn, run["envelope_id"], 16_000)  # now fits
     assert budget.ledger_mismatches(conn, project["id"]) == []

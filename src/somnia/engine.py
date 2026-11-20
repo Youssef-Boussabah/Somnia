@@ -27,7 +27,7 @@ from psycopg.types.json import Jsonb
 from .activation import activate_candidate
 from .artifacts import ArtifactStore
 from .contracts import GateRequest, RunConfig, ScenarioSpec, SkillBody
-from .errors import (BillingUncertain, FixtureError, IdempotencyConflict, IneligibleCandidate, IntegrityFailure,
+from .errors import (FixtureError, IdempotencyConflict, IneligibleCandidate, IntegrityFailure, OperatorActionRequired,
                      LeaseLost, LeaseUnavailable, RunBlocked, StaleActivation, StaleParentVersion, StaleValidation,
                      translating)
 from .gateway import CallContext, ModelGateway
@@ -229,9 +229,10 @@ class SleepWorker:
                 self._hook("stage.after_commit", stage=stage, fence=fence)
                 outcome.stages_run.append(stage)
                 attempt_id = None
-        except BillingUncertain as exc:
-            self._block(run_id, fence, attempt_id, f"uncertain_billing: {exc}")
-            outcome.status, outcome.blocked_reason = "blocked", str(exc)
+        except OperatorActionRequired as exc:  # uncertain billing, outstanding request, frozen budget
+            reason = f"{exc.reason_code}: {exc}"
+            self._block(run_id, fence, attempt_id, reason)
+            outcome.status, outcome.blocked_reason = "blocked", reason
             return outcome
         except LeaseLost:
             raise
@@ -309,7 +310,8 @@ class SleepWorker:
 
     def _call_ctx(self, ctx: _Ctx) -> CallContext:
         return CallContext(run_id=ctx.run["id"], stage=ctx.stage, stage_attempt_id=ctx.attempt_id,
-                           envelope_id=ctx.run["envelope_id"], guard=self._guard(ctx))
+                           envelope_id=ctx.run["envelope_id"], guard=self._guard(ctx), fence=ctx.fence,
+                           worker_id=self.worker_id)
 
     # ------------------------------------------------------------ stages
     def _stage_consolidate(self, ctx: _Ctx, gw: ModelGateway):

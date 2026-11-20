@@ -143,5 +143,5 @@ The consolidate prompt (`consolidate.v2`) cites events by snapshot-local referen
 
 ## Stability rules
 - Changing a field is a contract change: bump that model's `schema_version`, re-export, and record the change in DECISIONS.md.
-- Report JSON (`somnia report RUN --json`) has `report_schema_version: 1` but no JSON Schema yet. The dashboard should treat it as provisional until a typed report contract is agreed.
+- Report JSON (`somnia report RUN --json`) has `report_schema_version: 2` (D045: `budget_alerts` and the outstanding-request / billing-discrepancy entries under `unresolved`) but no JSON Schema yet. The dashboard should treat it as provisional until a typed report contract is agreed.
 - Inside the archived report artifact, the report stage's own `output_hash` is `null`, because a report cannot contain the hash of the bytes it is serialized into (D036).

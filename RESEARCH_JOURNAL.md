@@ -132,3 +132,96 @@ What actually ran:
 
 Measured cost: CAD 0. No reservations.
 Next action: Codex review of D042; the user commits and pushes.
+
+## 2026-11-19 — Repair of review finding R1 (gateway recovery, budget accounting) and adoption of T1
+Type: engineering. **Not an experiment; no research result.** Author: Claude Code.
+Base: `5ac29ee` on `foundation`, clean working tree. The repair is uncommitted (D041).
+
+What actually ran:
+- I wrote `tests/test_gateway_recovery.py` first: 10 tests, mock provider, real PostgreSQL. Run against the unfixed code: **1 passed, 9 failed**.
+  - T1 (response before resume, no operator) passed: that path already worked.
+  - R1 after operator reconciliation, `exact` and `zero`: A failed with `InvalidReservationTransition: ... is settled; cannot -> settled`, so the evidence was lost.
+  - Resume before the response arrives, `exact` and `zero`: the replacement worker **completed the run**, meaning it re-sent the outstanding call after billing had merely been reconciled.
+  - The other 5 needed interfaces added by the fix: `record_response`, `BudgetFrozen`, `abandon_request`, `InvalidRequestResolution`.
+- **Fix (D044):** migration 0003 adds request identity, abandonments, discrepancies and the SB003 freeze. The gateway gains the outstanding-request refusal and an idempotent `record_response`. The budget module gains operator actions and alerts, and the ledger check now includes discrepancy differences. The report is schema v2 (D045).
+- **After the fix:** `uv run pytest` gave **69 passed, 0 failed, 0 skipped**. The first full run had 1 failure in my own new test: an evidence string too short for validation, which masked the intended state check. I corrected the test input, not the code.
+- **Mutations** on a disposable copy of the working tree, each caught: N1 outstanding refusal (4 tests), N2 discrepancy creation (5), N3 SB003 freeze (4), N4 duplicate detection (1), N5 ledger application (6).
+- **Upgrade:** I made a TEMPLATE copy of the development database (at 0002).
+  - 0003 applied and backfilled 6 request identities for 6 existing calls, all with prompts.
+  - `ledger_mismatches` was empty for every project, and there were no alerts.
+  - `somnia demo` against the copy completed (usage confirmed 5,066 MOCK_MICRO; 0 outstanding requests; 0 discrepancies).
+  - The copy was dropped. The development database itself is still at 0002.
+
+Measured cost: CAD 0; mock units only.
+Next action: review of D044 (Codex). The user commits.
+
+## 2026-11-19 — D044 follow-up after Codex review: coordination, cap coverage, upgrade, pre-send boundary
+Type: engineering. **Not an experiment; no research result.** Author: Claude Code.
+Base: `5ac29ee` plus the unstaged R1/T1 repair (preserved; backed up before work). Everything is still unstaged (D041).
+
+What actually ran:
+- First I added two inert hook points to the gateway: after the initial completed-response lookup, and inside admission before its checks. Then I wrote 11 new regressions and ran the two affected files against that tree (the 11 new tests plus 2 existing upgrade tests, one of them extended with the superseded case): **11 failed, 2 passed**.
+  - Pause C after its lookup, then commit A's exact late response: C created a second request and **sent again** (2 `provider_requests` for one logical request).
+  - Pause C inside admission while A's response commits: the provider saw **2 sends**.
+  - Cap coverage after reconciliation, `zero` / `lower` / `exact`: the parent held **0** instead of 16,000 / 14,841 / 13,682 remaining. The `higher` case passed, since the operator figure (18,000) already covers the bound.
+  - Sender paused after its reservation, then abandonment and a replacement retry: **A woke and sent as well**.
+  - An open send permit: abandonment was allowed with no sender attestation.
+  - Migration: 0003 installed over unresolved `uncertain` and `reserved` legacy holds; a reconciled legacy request had no coverage; a superseded legacy hold was not resolved.
+  - The 2 passes were the `higher` estimate and the pre-existing cross-project upgrade test.
+- A 14th regression, `…cannot_send_after_losing_its_lease`, was added after mutation L5 survived. It fails on the pre-fix code: A sent after losing its lease. An earlier "pass" of that run was invalid, because the copied virtualenv pointed at the fixed sources; I re-ran it with a fresh environment.
+- **Fix (D046, D047):** migration 0003 was revised in place; it had never been applied to a persistent database. `gateway.py`: locked admission with a re-check, the fenced send permit, and permit end on every outcome. `budget.py`: attestation for abandonment, locking, and residual holds in the ledger check and alerts. Engine: fence and worker id in the call context. CLI: `--sender-stopped`.
+- **After the fix:** `uv run pytest` gave **81 passed, 0 failed, 0 skipped**. Two existing tests changed by design: `test_uncertain_billing_retains_reservation` now expects the residual hold and abandons before reserving again; `test_late_response_after_abandonment_is_still_recorded` supplies a deliberately wrong sender attestation.
+- **Mutations** on a disposable copy of the working tree:
+  - L1 (no lock), L2 (no re-check), L3 (no residual), L4 (residual never released), L6 (no attestation check), L7 (no upgrade precondition) and L8 (no superseded resolution) were caught.
+  - L5 (no permit lease guard) and L5b (also no Python abandonment check) **first survived**: the database trigger still refused permits for abandoned requests. They are caught after adding the lease-loss test. L5c (all three permit guards removed) was caught.
+- The development database was not touched (still at 0002). Only disposable `somnia_test_*` / `somnia_upg_*` databases were used.
+
+Measured cost: CAD 0; mock units only.
+
+## 2026-11-20 — Second D044 follow-up after Codex review: legacy retries, legacy late responses, reconcile/abandon race, provider errors after takeover
+Type: engineering. **Not an experiment; no research result.** Author: Claude Code.
+Base: `5ac29ee` plus the unstaged R1/T1, D044 and D046/D047 repairs (preserved, snapshotted to a scratch copy before work). Everything is still unstaged (D041).
+
+**Correction to the 2026-11-19 follow-up entry.** That entry counted mutation L8 ("no superseded resolution") as caught, and the migration then auto-resolved a pre-0003 attempt whose retry completed. That behaviour was wrong: a retry's receipt says nothing about the first attempt's bill. D048 reverses it. The earlier record is left as written.
+
+What actually ran:
+- I wrote `tests/test_d048_legacy_and_races.py` first (13 tests) and ran it against a snapshot of the pre-change tree. The first run had 11 tests, and **all 11 failed**. I added the 2 SQL-reconcile race variants and the invented-prompt check afterwards; rerun against the same snapshot, **all 13 failed**:
+  - Legacy retry: 0003 inserted a `migration-0003` abandonment for the original attempt and released its cover. Envelope held **0**, expected 16,000.
+  - Legacy late response: no supported path (`IntegrityFailure: ... predates prompt recording; record it manually`). In the retried variants the residual was also missing (held 0 instead of 16,000 / 13,200).
+  - Reconcile racing abandonment, both orderings: the second operation **did not wait** for the first. Afterwards, **12,000 stayed held on leaf and parent** in a residual hold with no outstanding request to release it.
+  - Provider error after takeover, timeout and not-sent, both before and after reconciliation: A failed with `InvalidReservationTransition` (`... is uncertain; cannot -> uncertain`, `... is settled; cannot -> released`, and so on). The **send permit stayed open** (`ended_at` NULL), so abandonment would still have needed a sender attestation. The error text was lost. The billing state itself was unchanged.
+- **Fix (D048):** migration 0003 revised in place again (never applied to a persistent database): no supersession; `operator_recorded_responses`; nullable `provider_calls.prompt_artifact`, guarded by a prompt-binding check and a deferred prompt-provenance trigger; `provider_request_sends.outcome`; row lock in the abandonment and provider-call triggers. `gateway.py`: `record_provider_error`, `OperatorRecord`, and no reuse of operator-recorded responses. CLI: `budget record-response`. Report: `operator_recorded_by` on provider calls; a missing prompt is reported by the trace.
+- One existing test changed by design: `test_upgrade_keeps_foundation_data_and_enforces_new_invariants` no longer expects supersession. It now expects the original attempt to stay outstanding with a 16,000 residual.
+- A Python-side lock in `budget.reconcile` was tried and removed: the database row lock alone serializes the race, which the SQL-reconcile variants test.
+- **After the fix:** `uv run pytest` gave **94 passed, 0 failed, 0 skipped** in two consecutive full runs (86.7 s, 88.9 s).
+  - An earlier mid-work full run had 1 failure: `test_leases.py::test_expired_worker_cannot_overwrite_newer_worker` (`KeyError: 'b'`; A lost its 1 s lease before reaching the hook). That test passed 5/5 alone and in both final runs. I am treating it as a pre-existing timing flake of the 1 s test lease under load; it was not investigated further.
+- **Mutations** on a disposable copy of the working tree, one guard at a time:
+  - M1 (migration supersedes again), M2 (gateway reuses operator-recorded responses), M3 (no row lock in abandonment), M4 (provider error leaves the permit open), M5 (provider error auto-abandons), M6 (prompt-less call without an operator record) and M9 (pre-fix billing transition on error) were **caught**.
+  - M8 (no prompt binding on provider calls) first **survived**. I then added an assertion that hand-written SQL cannot attach an invented prompt to a pre-0003 request, after which it was caught.
+  - M7 (no row lock in the provider-call trigger) **survived** the full suite (94 passed). It only protects hand-written SQL inserts of `provider_calls` racing a reconcile; `record_response` already locks the row itself. It remains untested defence in depth.
+- **Upgrade check:** I made a TEMPLATE copy of the development database (at 0002) and migrated it.
+  - 0003 applied; 6 request identities were backfilled, all with prompts; 0 residual holds; 0 ledger mismatches; 0 alerts.
+  - `somnia demo` against the copy completed with 0 outstanding requests.
+  - The copy was dropped. The development database is still at 0002 (migration 3 pending).
+- Not reproduced: no deadlock occurred in either race ordering, before or after the fix. Before the fix, the two operations did not wait for each other at all.
+
+Measured cost: CAD 0; mock units only.
+Next action: Codex review of D048; the user commits.
+
+## 2026-11-20 — Closing the Codex review of D048 (D049)
+Type: engineering. **Not an experiment; no research result.** Author: Claude Code.
+Base: `5ac29ee` plus the unstaged R1/T1, D044, D046/D047 and D048 repairs (preserved; snapshotted outside the repository before work). Everything is still unstaged (D041).
+
+What actually ran:
+- I wrote `tests/test_d049_review_closure.py` (7 tests) and changed the D048 never-retried expectation from "resend" to "pause". I ran both against the pre-change snapshot; its only change was an inert `OperatorReceiptOnly` class, so the tests could import. **9 failed** (the 7 new tests and the 2 never-retried cases); the other 11 D048 tests passed.
+  - Operator-only receipt: a resume **completed the run by re-sending** the logical request (2 `provider_requests`).
+  - Token counts (-4, 1) and (4, -1): accepted and stored as given, priced at 0 MOCK_MICRO. That released the 16,000 residual hold on leaf and parent, and the request counted as complete.
+  - `--response-file` with CRLF: 48 supplied bytes were stored as 44, with every CR removed. Delivering the same response through the gateway recording path then raised `IntegrityFailure: a different response is already recorded`.
+- **Fix (D049):** `OperatorReceiptOnly` in gateway admission (an operator-only receipt blocks the run); a per-field nonnegative check in `record_response`; the `provider_calls_tokens_nonnegative` constraint in 0003, preceded by an SR001 precondition; a strict-UTF-8 byte read in `budget record-response`.
+- **After the fix:** the targeted files gave 20 passed. `uv run pytest` gave **101 passed, 0 failed, 0 skipped** in three full runs (139.6 s, 150.8 s, 126.0 s).
+  - Earlier today the 94-test suite took about 87 s. The 7 new tests take about 12 s. In the timed run the remaining time was spread evenly across tests, with nothing over 3.9 s; I am treating it as machine load, not investigated further.
+- **Mutations** on a disposable copy, one at a time, all **caught**: P1 no pause (4 failed), P2 no Python token check (4), P3 no PostgreSQL check (4), P4 only the weighted total checked (4), P5 the CLI reads with newline translation (2).
+- **Upgrade check:** 0003 applied to a TEMPLATE copy of the development database: 6 requests, 0 ledger mismatches, 0 alerts, `somnia demo` completed. The copy was dropped. The development database is still at 0002 (migration 3 pending).
+
+Measured cost: CAD 0; mock units only.
+Next action: Codex re-review of D044–D049; the user commits.

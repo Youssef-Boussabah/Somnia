@@ -74,13 +74,45 @@ def cmd_budget_show(a):
     envs = conn.execute("SELECT id FROM budget_envelopes WHERE project_id = %s ORDER BY created_at", (pid,)).fetchall()
     _print({"envelopes": [budget.envelope_status(conn, e["id"]) for e in envs],
             "summary_by_unit": budget.spend_summary(conn, pid), "outstanding": budget.outstanding(conn, pid),
-            "ledger_mismatches": budget.ledger_mismatches(conn, pid)})
+            "alerts": budget.alerts(conn, pid), "ledger_mismatches": budget.ledger_mismatches(conn, pid)})
 
 
 def cmd_budget_reconcile(a):
+    """Billing only: settles what an uncertain hold cost. It does not permit resending the request."""
     conn, _ = _ctx()
     budget.reconcile(conn, uuid.UUID(a.reservation), actual_micro=a.actual_micro, note=a.note)
-    _print({"reconciled": a.reservation})
+    _print({"reconciled": a.reservation,
+            "note": "billing reconciled; the request stays outstanding until its response is recorded or it is"
+                    " abandoned with provider-side evidence (budget abandon-request)"})
+
+
+def cmd_budget_abandon(a):
+    conn, _ = _ctx()
+    budget.abandon_request(conn, uuid.UUID(a.reservation), evidence=a.evidence, actor=a.actor,
+                           sender_stopped_evidence=a.sender_stopped)
+    _print({"abandoned_request": a.reservation})
+
+
+def cmd_budget_record_response(a):
+    """Record a genuine late response that reached the operator, not the gateway (e.g. a pre-0003 request).
+    Settles or reconciles billing once; a duplicate delivery changes nothing. The prompt is never invented."""
+    from .gateway import OperatorRecord, record_response
+    from .interfaces import ProviderResponse
+
+    conn, art = _ctx()
+    # Exact bytes, strict UTF-8: read_text() would translate CRLF to LF and change the response (D049).
+    text = Path(a.response_file).read_bytes().decode("utf-8")
+    receipt = record_response(conn, art, uuid.UUID(a.reservation),
+                              ProviderResponse(text, a.input_tokens, a.output_tokens, a.request_id),
+                              operator=OperatorRecord(actor=a.actor, evidence=a.evidence))
+    _print({"provider_call_id": receipt.provider_call_id, "created": receipt.created,
+            "reported_micro": receipt.reported_micro, "discrepancy_id": receipt.discrepancy_id})
+
+
+def cmd_budget_resolve(a):
+    conn, _ = _ctx()
+    budget.resolve_discrepancy(conn, uuid.UUID(a.discrepancy), note=a.note, actor=a.actor)
+    _print({"resolved_discrepancy": a.discrepancy})
 
 
 def cmd_run_create(a):
@@ -221,6 +253,18 @@ def main(argv: list[str] | None = None) -> None:
     x = bu.add_parser("show"); x.add_argument("--project", required=True); x.set_defaults(fn=cmd_budget_show)
     x = bu.add_parser("reconcile"); x.add_argument("reservation"); x.add_argument("--actual-micro", type=int, required=True)
     x.add_argument("--note", required=True); x.set_defaults(fn=cmd_budget_reconcile)
+    x = bu.add_parser("abandon-request"); x.add_argument("reservation"); x.add_argument("--evidence", required=True)
+    x.add_argument("--sender-stopped", help="attestation that the original sender can no longer send"
+                   " (required when its send permit is still open)")
+    x.add_argument("--actor", required=True); x.set_defaults(fn=cmd_budget_abandon)
+    x = bu.add_parser("record-response", help="record a late response that reached the operator, not the gateway")
+    x.add_argument("reservation"); x.add_argument("--response-file", required=True)
+    x.add_argument("--input-tokens", type=int, required=True); x.add_argument("--output-tokens", type=int, required=True)
+    x.add_argument("--request-id", required=True, help="the provider's request id for this response")
+    x.add_argument("--evidence", required=True, help="where the response and usage came from")
+    x.add_argument("--actor", required=True); x.set_defaults(fn=cmd_budget_record_response)
+    x = bu.add_parser("resolve-discrepancy"); x.add_argument("discrepancy"); x.add_argument("--note", required=True)
+    x.add_argument("--actor", required=True); x.set_defaults(fn=cmd_budget_resolve)
     ru = sub.add_parser("run").add_subparsers(dest="sub", required=True)
     x = ru.add_parser("create"); x.add_argument("--project", required=True); x.add_argument("--snapshot", required=True)
     x.add_argument("--envelope", required=True); x.add_argument("--config", required=True)

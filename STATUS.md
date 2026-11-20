@@ -1,5 +1,5 @@
 # Somnia — current status
-As of 19 November 2026 · Foundation (Assignment A) implemented and repaired after two reviews, mock-only · branch `foundation`
+As of 20 November 2026 · Foundation (Assignment A) implemented and repaired after four reviews, mock-only · branch `foundation`
 
 ## Completed
 **Documentation baseline v0.1** (unchanged import, now commit `63d608c`).
@@ -32,13 +32,54 @@ As of 19 November 2026 · Foundation (Assignment A) implemented and repaired aft
 - It now raises `IdempotencyConflict`. A genuine rollback retry (same key, same target) still returns the original rollback receipt.
 - Handoff rule (D043): every Claude assignment ends with a written report and a review ZIP built outside the repository.
 
+**Repair of review finding R1 at `5ac29ee` (19 Nov 2026), uncommitted in the working tree:**
+- Billing reconciliation and request completion are now separate facts (D044, BUDGET.md).
+- A late response is persisted exactly once, even after operator reconciliation.
+- A replacement worker never re-sends a request that is still outstanding.
+- A differing amount opens a billing discrepancy. The difference is applied once to leaf and ancestors, and the envelope tree is frozen until it is resolved.
+- Evidence above a limit is kept and reported.
+- Migration `0003_request_lifecycle`; report schema v2 (D045).
+- The review's T1 probe and both R1 cases are now ordinary regression tests in `tests/test_gateway_recovery.py`.
+- **Follow-up after the Codex review (D046, D047):**
+  - one locked decision per logical request;
+  - residual holds keep cap coverage while a reconciled request is outstanding;
+  - fenced send permits stop a paused or fenced-out sender from sending after a replacement retried;
+  - 0003 refuses to install over unresolved pre-0003 holds, with drain instructions.
+  - Regressions are in `tests/test_d044_coordination.py` and `tests/test_migrations.py`.
+- **Second follow-up after the Codex review (20 Nov 2026, D048):**
+  - a pre-0003 attempt keeps its residual hold until its own evidence resolves it; a completed retry is reused but no longer supersedes it;
+  - `somnia budget record-response` records a genuine late response with its usage. A pre-0003 request's prompt stays unrecorded (operator record, never reused as model output);
+  - reconcile and abandonment serialize on the hold's row lock, so neither ordering strands a residual hold;
+  - a provider error returning after a takeover ends the send permit with its outcome and leaves billing untouched; a timeout never authorizes a resend.
+  - Regressions are in `tests/test_d048_legacy_and_races.py`.
+- **Closing the D048 review (20 Nov 2026, D049):**
+  - a logical request whose only receipt is operator-recorded pauses the run (`operator_recorded_response`): no reservation, no send, on every resume;
+  - reported token counts must each be nonnegative, checked both in `record_response` and in PostgreSQL;
+  - `--response-file` bytes are stored exactly, CRLF included.
+  - Regressions are in `tests/test_d049_review_closure.py`.
+- The development database is still at 0002. It will be upgraded by the next `somnia db migrate` or `somnia demo`; the upgrade was checked on a TEMPLATE copy.
+
 ## What is mock (not evidence of anything)
 - Model responses, scenario validity checks, rehearsal outcomes, gate verdicts and paired scores are all scripted from labelled synthetic fixtures (`fixtures/development/`).
 - No model was called and no generated code was executed.
 - The embedding is non-semantic feature hashing.
 - The mock gate is **not** independent validation. Skill sets activated through it carry `contains_mock_validation = true`, and the export verifier reports this as a scientific-use blocker.
 
-## Checks (actual, 19 Nov 2026)
+## Checks (actual, 19–20 Nov 2026)
+- After D049 (20 Nov), `uv run pytest` gave **101 passed, 0 failed, 0 skipped**: 94 earlier tests plus 7 in `test_d049_review_closure.py`. One existing D048 test now expects a pause instead of a resend.
+  - On the pre-change tree, which needed only an inert error-class shim to import, all 7 new tests and the 2 updated never-retried cases failed on the defect.
+  - Mutations P1–P5 (no pause, no Python token check, no PostgreSQL token check, weighted-total-only check, newline-translating read) were each caught.
+  - 0003 on a TEMPLATE copy of the development database: applied, 0 ledger mismatches, demo completed; copy dropped. The development database is still at 0002.
+- After the D048 follow-up (20 Nov), `uv run pytest` gave **94 passed, 0 failed, 0 skipped**, twice (86.7 s, 88.9 s): 81 earlier tests plus 13 in `test_d048_legacy_and_races.py`.
+  - Against the pre-change tree, all 13 new tests failed on the defect itself.
+  - Mutations M1–M9: 8 caught. M7, the row lock in the provider-call trigger, survived; it only covers hand-written SQL inserts, and no test exercises that path.
+  - One mid-work full run failed `test_expired_worker_cannot_overwrite_newer_worker` (`KeyError: 'b'`). It then passed 5/5 alone and in both final runs. This is a timing flake of the 1 s test lease under load, not investigated further.
+  - Upgrade check on a TEMPLATE copy of the development database: 0003 applied (6 requests backfilled, all with prompts, 0 residual holds), 0 ledger mismatches, `somnia demo` completed, copy dropped. The development database is still at 0002.
+- After the D044 follow-up, `uv run pytest` gave **81 passed, 0 failed, 0 skipped** (details in RESEARCH_JOURNAL.md).
+- After the R1 repair, `uv run pytest` gave **69 passed, 0 failed, 0 skipped**: 59 existing tests plus 10 in `test_gateway_recovery.py`.
+  - Before the fix, 9 of the 10 new tests failed and T1 passed. Both R1 cases failed with `InvalidReservationTransition` (evidence lost). Both resume-before-response cases failed because the replacement **completed the run by re-sending** the outstanding call. The other 5 needed the new interfaces.
+  - Mutations N1–N5 (outstanding-request refusal, discrepancy creation, spending freeze, duplicate detection, ledger application) were each caught.
+  - Two existing tests changed by design: `test_crash_between_reserve_and_send_blocks_until_reconciled` now requires abandonment evidence before the retry, and `test_upgrade_keeps_foundation_data_and_enforces_new_invariants` builds its pre-0003 data without today's gateway. Two report assertions gained the new fields.
 - After the `b87707c` repair, `uv run pytest` gave **59 passed, 0 failed, 0 skipped**, against a fresh real PostgreSQL + pgvector database per session.
   - Of the 2 new tests, the rollback-reusing-an-activation-key test was run first against the unfixed code: **DID NOT RAISE IdempotencyConflict**.
   - The rollback-retry test also failed before the fix, but only on its final assertion. The reverse reuse (an activation with a rollback's key) was already rejected, though only incidentally, as "used for a different gate decision", not because of the kind.
@@ -77,10 +118,13 @@ Experimental model spending: **CAD 0**. No CAD envelopes exist. Outstanding rese
 | Benchmarks/oracles not built (Assignment B) | Any meaningful learning result |
 | Learner/evaluator credential isolation not implemented | Trustworthy final evaluation |
 | Trusted channel for export digests not defined | Evaluator trusting a frozen set (D035) |
+| No workflow to authorize a retry when the only receipt is operator-recorded (D049) | Such runs stay paused (`operator_recorded_response`) |
+| An open send permit can only be closed by an operator's sender-stopped attestation (D046) | Fully automatic retry after a sender stalls mid-send; needs provider-side idempotency to remove |
+| No lease heartbeat during a provider call (review U5) | Real providers slower than the lease TTL will routinely hit the D044 recovery path (safe, but operator-heavy) |
 | Task sandbox not implemented | Executing generated code |
 
 ## Next gate
-**Re-review of the D042 repair** (Codex, Assignment D), then the user commits and pushes `foundation` to the public remote. In parallel, and only if authorized: Assignment B evaluation-contract work against `contracts/`. Paid work still requires the BUDGET.md preflight.
+**Re-review of the D044–D049 repair** (Codex, Assignment D), then the user commits and pushes `foundation` to the public remote. In parallel, and only if authorized: Assignment B evaluation-contract work against `contracts/`. Paid work still requires the BUDGET.md preflight.
 
 ## Housekeeping
 - `SHA256SUMS.txt` is the v0.1 documentation-delivery manifest and no longer matches the updated records; Git history is now the source of truth.

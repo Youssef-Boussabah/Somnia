@@ -44,7 +44,7 @@ def db_url() -> str:
         admin.execute(f'CREATE DATABASE "{name}"')
     url = _with_db(base, name)
     with connect(url) as c:
-        assert migrate(c) == [1, 2]
+        assert migrate(c) == [1, 2, 3]
     yield url
     with psycopg.connect(base, autocommit=True) as admin:
         admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')

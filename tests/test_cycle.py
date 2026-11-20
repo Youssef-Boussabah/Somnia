@@ -67,7 +67,9 @@ def test_archived_report_describes_the_completed_run(conn, artifacts, project):
     report_stage = next(s for s in archived["stages"] if s["stage"] == "report")
     assert [a["status"] for a in report_stage["attempts"]] == ["succeeded"]
     assert all(a["status"] == "succeeded" for s in archived["stages"] for a in s["attempts"])
-    assert archived["unresolved"] == {"reservations": [], "failed_or_abandoned_attempts": []}
+    assert archived["unresolved"] == {"reservations": [], "outstanding_requests": [], "billing_discrepancies": [],
+                                      "failed_or_abandoned_attempts": []}
+    assert archived["budget_alerts"] == []
 
 
 def test_artifacts_trace_back_to_inputs(conn, artifacts, project):

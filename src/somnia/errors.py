@@ -48,8 +48,40 @@ class LeaseLost(SomniaError):
     """This worker's lease expired or was superseded; its writes were rejected."""
 
 
-class BillingUncertain(SomniaError):
+class OperatorActionRequired(SomniaError):
+    """The sleep engine must block the run until an operator acts; ``reason_code`` prefixes the block reason."""
+
+    reason_code = "operator_action_required"
+
+
+class BillingUncertain(OperatorActionRequired):
     """A provider call may have been billed; its reservation is retained until reconciled."""
+
+    reason_code = "uncertain_billing"
+
+
+class RequestOutstanding(OperatorActionRequired):
+    """An earlier send of the same request has neither a recorded response nor an evidence-backed
+    abandonment. Billing reconciliation alone does not resolve it, so the request is not sent again."""
+
+    reason_code = "request_outstanding"
+
+
+class OperatorReceiptOnly(OperatorActionRequired):
+    """The only receipt for this logical request was recorded by an operator. It keeps its billing and
+    provenance, but is not reused as model output and does not authorize another send (D049): the run pauses."""
+
+    reason_code = "operator_recorded_response"
+
+
+class BudgetFrozen(OperatorActionRequired):
+    """An open billing discrepancy freezes new spending in the envelope tree (SQLSTATE SB003)."""
+
+    reason_code = "billing_discrepancy"
+
+
+class InvalidRequestResolution(SomniaError):
+    """A request abandonment or evidence record is not allowed in the current state (SQLSTATE SR001)."""
 
 
 class RunBlocked(SomniaError):
@@ -95,6 +127,8 @@ _SQLSTATE_MAP: dict[str, type[SomniaError]] = {
     "SG001": GateHashMismatch,
     "SP001": PartitionViolation,
     "SA001": ActivationInvariantViolation,
+    "SB003": BudgetFrozen,
+    "SR001": InvalidRequestResolution,
 }
 
 

@@ -125,11 +125,109 @@ def mark_uncertain(conn: psycopg.Connection, reservation_id: UUID, *, note: str)
 
 def reconcile(conn: psycopg.Connection, reservation_id: UUID, *, actual_micro: int, note: str,
               request_id: str | None = None) -> None:
-    """Operator resolution of an uncertain reservation with an evidenced actual cost (0 allowed)."""
+    """BILLING resolution of an uncertain reservation with an evidenced actual cost (0 allowed).
+
+    This settles what the hold cost; it says nothing about whether the request completed. It does
+    NOT authorize sending the request again (D044): a later attempt is blocked as RequestOutstanding
+    until the response is recorded or the request is abandoned with evidence (``abandon_request``).
+    If the response arrives later with a different reported usage, a billing discrepancy is opened.
+
+    A concurrent abandonment is serialized with this on the hold's row lock (the abandonment trigger takes it
+    FOR UPDATE), so it either commits first and no residual hold is created, or waits and then releases the
+    residual this creates. Neither ordering strands a hold (D048)."""
     if not note.strip():
         raise ValueError("reconciliation requires a note describing the billing evidence")
     _transition(conn, reservation_id, to_state="settled", allowed_from=("uncertain",), actual_micro=actual_micro,
                 request_id=request_id, note=note)
+
+
+def abandon_request(conn: psycopg.Connection, reservation_id: UUID, *, evidence: str, actor: str,
+                    sender_stopped_evidence: str | None = None) -> None:
+    """REQUEST resolution: record that the request sent under ``reservation_id`` will never produce a
+    response, which is the only thing that permits a retry when no response arrived (BUDGET.md, D046).
+
+    Runs under the logical-request lock. Allowed only after the hold was marked uncertain (or reconciled),
+    never while it is 'reserved', and never once a response is recorded. What is required depends on the
+    send permit (``provider_request_sends``), which a sender must take, fenced by its lease, immediately
+    before contacting the provider:
+      * no permit: nothing was sent, and the original sender can never obtain one later (its lease is
+        gone and the request is abandoned), so provider-side ``evidence`` suffices;
+      * permit whose send has ended (the provider call returned, e.g. with an unknown outcome): the local
+        sender is done; provider-side ``evidence`` that the request failed or never completed is required;
+      * permit still OPEN: the sender may be paused between its permit and the network write, or the
+        request may be in flight. A provider log showing no request *yet* proves nothing about that, so
+        ``sender_stopped_evidence`` is also required (e.g. the worker process is confirmed terminated).
+    Acceptable provider-side evidence: the provider's request log/dashboard showing no request with this
+    request id or idempotency key, a provider error/status record showing it failed or was cancelled, or
+    provider support confirmation. Abandoning releases the request's residual hold. A response that still
+    arrives is recorded, and opens a discrepancy if billing differs."""
+    if len(evidence.strip()) < 10:
+        raise ValueError("abandonment requires a description of the provider-side evidence")
+    with translating(), conn.transaction():
+        q = conn.execute("SELECT run_id, request_key FROM provider_requests WHERE reservation_id = %s",
+                         (reservation_id,)).fetchone()
+        if q is None:
+            raise LookupError(f"no recorded provider request for reservation {reservation_id}")
+        conn.execute("SELECT lock_logical_request(%s, %s)", (q["run_id"], q["request_key"]))
+        conn.execute("INSERT INTO provider_request_abandonments (reservation_id, evidence, sender_stopped_evidence,"
+                     " actor) VALUES (%s, %s, %s, %s)", (reservation_id, evidence, sender_stopped_evidence, actor))
+
+
+def resolve_discrepancy(conn: psycopg.Connection, discrepancy_id: UUID, *, note: str, actor: str) -> None:
+    """Acknowledge an open billing discrepancy and lift the spending freeze on its envelope tree.
+    The difference was already applied to the ledger when the discrepancy was opened; resolving never
+    applies it again. Both the operator's reconciliation and the provider-reported usage stay on record."""
+    if not note.strip():
+        raise ValueError("resolving a billing discrepancy requires a note")
+    with translating(), conn.transaction():
+        row = conn.execute("UPDATE billing_discrepancies SET status = 'resolved', resolution_note = %s, resolved_by = %s,"
+                           " resolved_at = clock_timestamp() WHERE id = %s AND status = 'open' RETURNING id",
+                           (note, actor, discrepancy_id)).fetchone()
+        if row is None:
+            raise InvalidReservationTransition(f"billing discrepancy {discrepancy_id} is not open")
+
+
+def open_discrepancies(conn: psycopg.Connection, project_id: UUID) -> list[dict[str, Any]]:
+    return conn.execute(
+        "SELECT d.id, d.reservation_id, d.provider_call_id, e.name AS envelope, d.envelope_id, d.root_envelope_id,"
+        " d.operator_micro, d.reported_micro, d.delta_micro, d.created_at FROM billing_discrepancies d"
+        " JOIN budget_envelopes e ON e.id = d.envelope_id WHERE e.project_id = %s AND d.status = 'open'"
+        " ORDER BY d.created_at", (project_id,)).fetchall()
+
+
+def outstanding_requests(conn: psycopg.Connection, project_id: UUID) -> list[dict[str, Any]]:
+    """Requests that were (or may have been) sent and have no response, release or abandonment."""
+    return conn.execute(
+        "SELECT q.reservation_id, q.run_id, q.request_key, r.state AS hold_state, r.actual_micro, q.created_at,"
+        " (SELECT h.amount_micro FROM request_residual_holds h WHERE h.reservation_id = q.reservation_id"
+        "   AND h.released_at IS NULL) AS residual_micro,"
+        " (SELECT CASE WHEN s.ended_at IS NULL THEN 'open' ELSE 'ended' END FROM provider_request_sends s"
+        "   WHERE s.reservation_id = q.reservation_id) AS send_permit,"
+        " (SELECT s.outcome FROM provider_request_sends s WHERE s.reservation_id = q.reservation_id) AS send_outcome"
+        " FROM provider_requests q JOIN reservations r ON r.id = q.reservation_id"
+        " JOIN budget_envelopes e ON e.id = r.envelope_id WHERE e.project_id = %s AND r.state <> 'released'"
+        " AND NOT EXISTS (SELECT 1 FROM provider_calls c WHERE c.reservation_id = q.reservation_id)"
+        " AND NOT EXISTS (SELECT 1 FROM provider_request_abandonments a WHERE a.reservation_id = q.reservation_id)"
+        " ORDER BY q.created_at", (project_id,)).fetchall()
+
+
+def alerts(conn: psycopg.Connection, project_id: UUID) -> list[dict[str, Any]]:
+    """Conditions an operator must see: confirmed spend above a limit (evidence is never trimmed to fit),
+    open billing discrepancies (spending frozen) and outstanding requests (no resend allowed)."""
+    out: list[dict[str, Any]] = [
+        {"kind": "overrun", "envelope": r["name"], "envelope_id": str(r["id"]), "unit": r["unit"],
+         "limit_micro": r["limit_micro"], "confirmed_micro": r["confirmed_micro"], "held_micro": r["reserved_micro"]}
+        for r in conn.execute("SELECT id, name, unit, limit_micro, confirmed_micro, reserved_micro FROM budget_envelopes"
+                              " WHERE project_id = %s AND confirmed_micro > limit_micro ORDER BY name",
+                              (project_id,)).fetchall()]
+    out += [{"kind": "open_discrepancy", "discrepancy_id": str(d["id"]), "envelope": d["envelope"],
+             "operator_micro": d["operator_micro"], "reported_micro": d["reported_micro"],
+             "delta_micro": d["delta_micro"]} for d in open_discrepancies(conn, project_id)]
+    out += [{"kind": "outstanding_request", "reservation_id": str(q["reservation_id"]), "run_id": str(q["run_id"]),
+             "hold_state": q["hold_state"], "residual_micro": q["residual_micro"], "send_permit": q["send_permit"],
+             "send_outcome": q["send_outcome"]}
+            for q in outstanding_requests(conn, project_id)]
+    return out
 
 
 def envelope_status(conn: psycopg.Connection, envelope_id: UUID) -> dict[str, Any]:
@@ -141,7 +239,9 @@ def envelope_status(conn: psycopg.Connection, envelope_id: UUID) -> dict[str, An
 
 
 def ledger_mismatches(conn: psycopg.Connection, project_id: UUID) -> list[dict[str, Any]]:
-    """Recompute each envelope's counters from the reservation ledger (including descendants).
+    """Recompute each envelope's counters from the ledger (including descendants): held = reserved and
+    uncertain reservations + open residual holds; confirmed = settled actuals + billing-discrepancy
+    differences (each once).
     Returns envelopes whose stored counters disagree; empty means consistent."""
     return conn.execute(
         """
@@ -149,12 +249,23 @@ def ledger_mismatches(conn: psycopg.Connection, project_id: UUID) -> list[dict[s
             SELECT id AS root, id AS node FROM budget_envelopes WHERE project_id = %(p)s
             UNION ALL
             SELECT t.root, c.id FROM tree t JOIN budget_envelopes c ON c.parent_id = t.node
-        ), sums AS (
+        ), res AS (
             SELECT t.root,
                    COALESCE(SUM(r.amount_micro) FILTER (WHERE r.state IN ('reserved','uncertain')), 0) AS held,
-                   COALESCE(SUM(r.actual_micro) FILTER (WHERE r.state = 'settled'), 0) AS confirmed
+                   COALESCE(SUM(r.actual_micro) FILTER (WHERE r.state = 'settled'), 0) AS settled
               FROM tree t LEFT JOIN reservations r ON r.envelope_id = t.node
              GROUP BY t.root
+        ), adj AS (
+            SELECT t.root, COALESCE(SUM(d.delta_micro), 0) AS delta
+              FROM tree t LEFT JOIN billing_discrepancies d ON d.envelope_id = t.node
+             GROUP BY t.root
+        ), resid AS (
+            SELECT t.root, COALESCE(SUM(h.amount_micro) FILTER (WHERE h.released_at IS NULL), 0) AS held
+              FROM tree t LEFT JOIN request_residual_holds h ON h.envelope_id = t.node
+             GROUP BY t.root
+        ), sums AS (
+            SELECT res.root, res.held + resid.held AS held, res.settled + adj.delta AS confirmed
+              FROM res JOIN adj USING (root) JOIN resid USING (root)
         )
         SELECT e.id, e.name, e.reserved_micro, s.held, e.confirmed_micro, s.confirmed
           FROM budget_envelopes e JOIN sums s ON s.root = e.id

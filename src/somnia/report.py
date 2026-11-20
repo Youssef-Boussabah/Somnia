@@ -15,7 +15,7 @@ from .hashing import hash_obj
 from .skills import load_candidate
 from .stages import STAGES
 
-REPORT_SCHEMA_VERSION = 1
+REPORT_SCHEMA_VERSION = 2  # 2: budget_alerts; unresolved.outstanding_requests / billing_discrepancies (D044)
 MOCK_LABELS = [
     "MOCK MODEL RESPONSES (scripted fixture text, no model was called)",
     "SYNTHETIC DEVELOPMENT FIXTURES (fake experience and outcomes)",
@@ -89,9 +89,10 @@ def build_report(conn: psycopg.Connection, run_id: UUID) -> dict[str, Any]:
         "SELECT r.id, r.state, r.amount_micro, r.actual_micro, r.purpose, r.request_id, e.unit FROM reservations r"
         " JOIN budget_envelopes e ON e.id = r.envelope_id WHERE r.run_id = %s ORDER BY r.created_at",
         (run_id,)).fetchall()
-    calls = conn.execute("SELECT id, provider, model, is_mock, input_tokens, output_tokens, request_id,"
-                         " prompt_artifact, response_artifact FROM provider_calls WHERE run_id = %s ORDER BY created_at",
-                         (run_id,)).fetchall()
+    calls = conn.execute("SELECT c.id, c.provider, c.model, c.is_mock, c.input_tokens, c.output_tokens, c.request_id,"
+                         " c.prompt_artifact, c.response_artifact, o.actor AS operator_recorded_by"
+                         " FROM provider_calls c LEFT JOIN operator_recorded_responses o ON o.provider_call_id = c.id"
+                         " WHERE c.run_id = %s ORDER BY c.created_at", (run_id,)).fetchall()
     unresolved = [{"reservation_id": str(r["id"]), "state": r["state"], "amount_micro": r["amount_micro"],
                    "unit": r["unit"]} for r in res if r["state"] in ("reserved", "uncertain")]
     failed = [a for a in attempts if a["status"] in ("failed", "abandoned")]
@@ -125,7 +126,18 @@ def build_report(conn: psycopg.Connection, run_id: UUID) -> dict[str, Any]:
             "unit_note": "MOCK_MICRO units are not money" if env["unit"] == "MOCK_MICRO" else "CAD micro-units",
         },
         "real_spend": budget.spend_summary(conn, run["project_id"])["CAD_MICRO"],
+        # Project-wide: overruns (evidence is never trimmed to fit a cap), open billing discrepancies
+        # (spending frozen) and outstanding requests (no resend). Empty when nothing needs an operator.
+        "budget_alerts": budget.alerts(conn, run["project_id"]),
         "unresolved": {"reservations": unresolved,
+                       "outstanding_requests": [{"reservation_id": str(q["reservation_id"]), "hold_state": q["hold_state"]}
+                                                for q in budget.outstanding_requests(conn, run["project_id"])
+                                                if q["run_id"] == run_id],
+                       "billing_discrepancies": [{k: _s(v) for k, v in d.items() if k != "created_at"}
+                                                 for d in conn.execute(
+                           "SELECT d.id, d.status, d.operator_micro, d.reported_micro, d.delta_micro FROM"
+                           " billing_discrepancies d JOIN reservations r ON r.id = d.reservation_id"
+                           " WHERE r.run_id = %s ORDER BY d.created_at", (run_id,)).fetchall()],
                        "failed_or_abandoned_attempts": [{"stage": a["stage"], "fence": a["fence"],
                                                          "status": a["status"], "error": a["error"]} for a in failed]},
     }
@@ -173,8 +185,12 @@ def render_text(r: dict[str, Any]) -> str:
                f" calls={len(u['provider_calls'])}")
     rs = r["real_spend"]
     out.append(f"real spend (CAD): confirmed={rs['confirmed_micro'] / 1e6:.2f} held={rs['held_micro'] / 1e6:.2f}")
+    for al in r["budget_alerts"]:
+        out.append(f"  !! BUDGET {al['kind'].upper()}: " + ", ".join(f"{k}={v}" for k, v in al.items() if k != "kind"))
     un = r["unresolved"]
-    out.append(f"unresolved: {len(un['reservations'])} reservation(s); "
+    open_d = [d for d in un["billing_discrepancies"] if d["status"] == "open"]
+    out.append(f"unresolved: {len(un['reservations'])} reservation(s); {len(un['outstanding_requests'])} outstanding"
+               f" request(s); {len(open_d)} open billing discrepancy(ies); "
                f"{len(un['failed_or_abandoned_attempts'])} failed/abandoned attempt(s)")
     for f in un["failed_or_abandoned_attempts"]:
         out.append(f"  {f['stage']} fence{f['fence']} {f['status']}: {f['error']}")
@@ -184,8 +200,11 @@ def render_text(r: dict[str, Any]) -> str:
 def _verify_call(conn: psycopg.Connection, artifacts: ArtifactStore, call_id: UUID) -> list[str]:
     pc = conn.execute("SELECT prompt_artifact, response_artifact FROM provider_calls WHERE id = %s",
                       (call_id,)).fetchone()
-    return [f"provider call {call_id} {kind} {pc[kind]} failed verification"
-            for kind in ("prompt_artifact", "response_artifact") if not artifacts.verify(pc[kind])]
+    out = [f"provider call {call_id} {kind} {pc[kind]} failed verification"
+           for kind in ("prompt_artifact", "response_artifact") if pc[kind] is not None and not artifacts.verify(pc[kind])]
+    if pc["prompt_artifact"] is None:
+        out.append(f"provider call {call_id} has no recorded prompt (operator-recorded pre-0003 response)")
+    return out
 
 
 def trace_skill_version(conn: psycopg.Connection, artifacts: ArtifactStore, version_id: UUID) -> dict[str, Any]:
